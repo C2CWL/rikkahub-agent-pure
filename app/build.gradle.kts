@@ -137,7 +137,13 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
             optimization {
-                enable = true
+                // SPIKE (feat/moxw-ortqnn): OFF for this branch only. R8 renames
+                // ai.onnxruntime.** (the ORT AAR's consumer rules keep only its telemetry
+                // classes) and the native layer then cannot find OrtException when it has to
+                // turn an error status into an exception -- it aborts the whole process via
+                // JNI NewObject(null mid) instead. Verified against the built dex: zero
+                // classes left under Lai/onnxruntime/. Never merged.
+                enable = false
             }
         }
         debug {
