@@ -5,6 +5,9 @@ import kotlinx.coroutines.sync.withLock
 import me.rerere.llamacpp.LlamaCppEmbedder
 import me.rerere.llamacpp.LlamaCppEmbeddingCatalog
 import me.rerere.llamacpp.LlamaCppEmbeddingEntry
+import me.rerere.locallm.litert.LitertEmbeddingCatalog
+import me.rerere.locallm.litert.LitertEmbeddingEntry
+import me.rerere.locallm.litert.LitertLmEmbedder
 import java.io.File
 
 /**
@@ -33,12 +36,30 @@ import java.io.File
  * fit. See [ChunkSpec.fitting].
  */
 class EmbeddingService(
-    /** Where installed GGUF files live; a lambda so tests never touch the filesystem. */
-    private val modelsDir: () -> File,
+    /**
+     * Where installed embedding models live - one directory per runtime, see [EmbeddingModelFiles].
+     * A lambda, so tests never touch the filesystem.
+     *
+     * A *list* rather than one directory because which engine runs is decided by the extension of
+     * the file that resolves: `.gguf` goes to llama.cpp, `.litertlm` to LiteRT-LM. The file is a
+     * name ([EmbeddingModelRules.pick] reasons in names), so it has to be looked for in both.
+     */
+    private val modelDirs: () -> List<File>,
     /** The user's explicit choice, if any. */
     private val configuredFileName: suspend () -> String?,
     private val embedder: LlamaCppEmbedder = LlamaCppEmbedder(),
-    private val curatedOrder: List<String> = LlamaCppEmbeddingCatalog.ENTRIES.map { it.file },
+    /**
+     * The LiteRT-LM engine, used when the resolved file is a `.litertlm`.
+     *
+     * Two engines behind this one door rather than one abstraction over both: they share nothing
+     * except the idea of producing a vector - one owns a GGUF context, the other a compiled
+     * `.litertlm` - and the choice between them is a property of the *installed file*, not of a
+     * setting, so there is nothing for an abstraction to decide.
+     */
+    private val litert: LitertLmEmbedder = LitertLmEmbedder(),
+    /** The curated `.litertlm` entry for a file name, which carries its signature and prefixes. */
+    private val litertEntryFor: (String) -> LitertEmbeddingEntry? = LitertEmbeddingCatalog::entryFor,
+    private val curatedOrder: List<String> = EmbeddingCatalog.curatedOrder,
     /** Prefix lookup, injectable so a test can exercise the behaviour without the catalogue. */
     private val entryFor: (String) -> LlamaCppEmbeddingEntry? = LlamaCppEmbeddingCatalog::entryFor,
     /**
@@ -70,6 +91,14 @@ class EmbeddingService(
         val contextTokens: Int,
         val queryPrefix: String = "",
         val documentPrefix: String = "",
+        /**
+         * True when LiteRT-LM is the engine behind this, false when it is llama.cpp.
+         *
+         * Recorded on the loaded model rather than re-derived from the file name at each call,
+         * because the two engines have separate state and [release] has to free the right one -
+         * freeing the wrong one leaves a few hundred megabytes resident with nothing referencing it.
+         */
+        val litert: Boolean = false,
         /**
          * The cloud model behind this, or null when it is the local file.
          *
@@ -115,18 +144,55 @@ class EmbeddingService(
             return@withLock loaded
         }
 
-        val installed = modelsDir().listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        val installed = modelDirs().flatMap { dir ->
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        }
         val fileName = EmbeddingModelRules.pick(
             configured = configuredFileName(),
             installed = installed,
             curatedOrder = curatedOrder,
         ) ?: return@withLock null
 
-        val file = File(modelsDir(), fileName)
-        if (!file.isFile) return@withLock null
+        val file = modelDirs().asSequence().map { File(it, fileName) }.firstOrNull { it.isFile }
+            ?: return@withLock null
+
+        val loaded = if (EmbeddingModelRules.isLitert(fileName)) {
+            loadLitert(fileName, file)
+        } else {
+            loadLlamaCpp(fileName, file)
+        } ?: return@withLock null
+        active = loaded
+        loaded
+    }
+
+    /**
+     * Opens a `.litertlm`.
+     *
+     * The signature and the prefixes come from the *catalogue*, not from the file: a `.litertlm`
+     * carries neither, and both matter in ways that fail quietly. The signature is what bounds
+     * every text we will ever hand this engine (it refuses a longer one), and the prefixes are what
+     * tell the model which side of its contrastive pair a text is on. An uncurated `.litertlm` is
+     * therefore refused rather than guessed at - a wrong window fails loudly, but a missing prefix
+     * only ranks worse, which is exactly the kind of damage nothing downstream can detect.
+     */
+    private suspend fun loadLitert(fileName: String, file: File): ActiveModel? {
+        val entry = litertEntryFor(fileName) ?: return null
+        val info = litert.load(file.absolutePath, entry.signature)
+        return ActiveModel(
+            fileName = fileName,
+            dim = info.dim,
+            // The loaded signature, not the model's headline context: see the catalogue.
+            contextTokens = info.signature,
+            queryPrefix = entry.queryPrefix,
+            documentPrefix = entry.documentPrefix,
+            litert = true,
+        )
+    }
+
+    private suspend fun loadLlamaCpp(fileName: String, file: File): ActiveModel {
         val info = embedder.load(file.absolutePath)
         val entry = entryFor(fileName)
-        val loaded = ActiveModel(
+        return ActiveModel(
             fileName = fileName,
             dim = info.dim,
             // The model's own window, not the one we asked the context for: a small BERT is
@@ -137,8 +203,6 @@ class EmbeddingService(
             queryPrefix = entry?.queryPrefix.orEmpty(),
             documentPrefix = entry?.documentPrefix.orEmpty(),
         )
-        active = loaded
-        loaded
     }
 
     /**
@@ -169,7 +233,7 @@ class EmbeddingService(
     }
 
     private suspend fun embedWith(model: ActiveModel, text: String): FloatArray {
-        val vector = embedder.embedNormalized(text)
+        val vector = if (model.litert) litert.embedNormalized(text) else embedder.embedNormalized(text)
         require(vector.size == model.dim) {
             "the model returned ${vector.size} values, expected ${model.dim}"
         }
@@ -207,7 +271,9 @@ class EmbeddingService(
         if (current != null) {
             // Nothing is held for a cloud model: what it costs is the request, not a resident copy
             // of any weights.
-            if (!current.isCloud) embedder.unload()
+            if (!current.isCloud) {
+                if (current.litert) litert.unload() else embedder.unload()
+            }
             active = null
         }
     }

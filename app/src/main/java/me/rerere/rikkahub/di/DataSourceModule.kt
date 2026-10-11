@@ -92,11 +92,21 @@ val dataSourceModule = module {
         val appContext: Context = get()
         val settings: SettingsStore = get()
         me.rerere.rikkahub.data.vector.EmbeddingService(
-            // The llama.cpp directory, not `local-models/` itself: downloads and imports write
-            // to `local-models/llamacpp/`, so listing the root found only the two subdirectories
-            // and no model was ever seen. EmbeddingModelFiles is the one place this is spelled
-            // out, and its test pins it to ModelInstall.targetFile's directory.
-            modelsDir = { me.rerere.rikkahub.data.vector.EmbeddingModelFiles.dir(appContext) },
+            // Both runtime directories, not `local-models/` itself: downloads and imports write
+            // into `local-models/llamacpp/` or `local-models/litert/`, so listing the root found
+            // only the two subdirectories and no model was ever seen. EmbeddingModelFiles is the
+            // one place this is spelled out, and its test pins it to ModelInstall's directories.
+            modelDirs = { me.rerere.rikkahub.data.vector.EmbeddingModelFiles.dirs(appContext) },
+            // The LiteRT-LM engine, for a `.litertlm`. CPU by default: the GPU path is faster on
+            // this hardware but not bit-identical to the CPU one (cosine 0.9997 on a 768-wide
+            // vector), and an index has to be built with one accelerator throughout or the same
+            // text would score slightly differently depending on when it was indexed.
+            litert = me.rerere.locallm.litert.LitertLmEmbedder(
+                nativeLibraryDir = { appContext.applicationInfo.nativeLibraryDir },
+                cacheDir = {
+                    java.io.File(appContext.cacheDir, "litert-embed").apply { mkdirs() }.absolutePath
+                },
+            ),
             configuredFileName = {
                 settings.settingsFlow.value.embeddingModelFile.takeIf { it.isNotBlank() }
             },

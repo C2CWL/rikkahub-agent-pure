@@ -42,7 +42,7 @@ object EmbeddingReadiness {
         EmbeddingModelRules.pick(
             configured = settings.embeddingModelFile.takeIf { it.isNotBlank() },
             installed = installedLocalFiles,
-            curatedOrder = LlamaCppEmbeddingCatalog.ENTRIES.map { it.file },
+            curatedOrder = EmbeddingCatalog.curatedOrder,
         )
 
     /** Whether a vector can be produced at all. */

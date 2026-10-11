@@ -68,7 +68,7 @@ class EmbeddingServiceTest {
         val dir = temp.newFolder("llamacpp")
         File(dir, file).writeText("not really a gguf")
         return EmbeddingService(
-            modelsDir = { dir },
+            modelDirs = { listOf(dir) },
             configuredFileName = { file },
             embedder = LlamaCppEmbedder(native),
             curatedOrder = listOf(file),
@@ -161,7 +161,7 @@ class EmbeddingServiceTest {
 
     private fun cloudService(caller: CloudEmbeddingCaller, candidate: CloudEmbeddingCandidate = cloudCandidate()) =
         EmbeddingService(
-            modelsDir = { temp.newFolder("cloud-models") },
+            modelDirs = { listOf(temp.newFolder("cloud-models")) },
             configuredFileName = { null },
             cloudChoice = { candidate },
             cloud = caller,
@@ -174,7 +174,7 @@ class EmbeddingServiceTest {
         val dir = temp.newFolder("both")
         File(dir, ASYMMETRIC_FILE).writeText("not really a gguf")
         val service = EmbeddingService(
-            modelsDir = { dir },
+            modelDirs = { listOf(dir) },
             configuredFileName = { ASYMMETRIC_FILE },
             embedder = LlamaCppEmbedder(native),
             curatedOrder = listOf(ASYMMETRIC_FILE),
