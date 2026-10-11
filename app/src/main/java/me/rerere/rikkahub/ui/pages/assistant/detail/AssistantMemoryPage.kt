@@ -192,6 +192,42 @@ private fun AssistantMemoryContent(
         else -> stringResource(R.string.assistant_page_index_never)
     }
 
+    // Whether the model in effect reads pictures itself - the same question the coordinator asks
+    // before choosing a path, so the switch and the behaviour cannot disagree. Declared up here
+    // because two sections ask it: the knowledge base's image switch and the embedding rows.
+    val embeddingReadsImages = EmbeddingReadiness.localModelReadsImages(
+        settings,
+        embeddingInstalled,
+    )
+
+    // Whether the cloud backend is the one in effect. Up here for the same reason: the embedding
+    // rows and the picker dialog both branch on it, and only one of them used to declare it.
+    val cloudSelected = CloudEmbeddingRules.isCloud(settings.embeddingBackend)
+
+    // What the resolved model is, in one line. Presentation, so it is built here and not in
+    // EmbeddingReadiness: the entries carry the numbers, the screen decides how to say them.
+    // Null when nothing curated resolves - a cloud model, or a GGUF installed by hand.
+    val embeddingModelFacts: String? = run {
+        if (cloudSelected) return@run null
+        val file = EmbeddingModelRules.pick(
+            configured = settings.embeddingModelFile.takeIf { it.isNotBlank() },
+            installed = embeddingInstalled,
+            curatedOrder = EmbeddingCatalog.curatedOrder,
+        )
+        val entry = file?.let { LitertEmbeddingCatalog.entryFor(it) } ?: return@run null
+        // The window that will actually be loaded, which is the override when there is one.
+        val window = settings.embeddingSignature.takeIf { it > 0 } ?: entry.signature
+        stringResource(
+            if (entry.vision) {
+                R.string.assistant_page_embedding_facts_vision
+            } else {
+                R.string.assistant_page_embedding_facts
+            },
+            entry.dim,
+            window,
+        )
+    }
+
     if (showTimeReminderIntervalDialog) {
         val interval = timeReminderIntervalInput.toIntOrNull()?.takeIf { it > 0 }
         AlertDialog(
@@ -634,37 +670,6 @@ private fun AssistantMemoryContent(
             )
         }
 
-        // Whether the model in effect reads pictures itself - the same question the coordinator
-        // asks before choosing a path, so the switch and the behaviour cannot disagree.
-        val embeddingReadsImages = EmbeddingReadiness.localModelReadsImages(
-            settings,
-            embeddingInstalled,
-        )
-
-        // What the resolved model is, in one line. Presentation, so it is built here and not in
-        // EmbeddingReadiness: the entries carry the numbers, the screen decides how to say them.
-        // Null when nothing curated resolves - a cloud model, or a GGUF installed by hand.
-        val embeddingModelFacts: String? = run {
-            if (cloudSelected) return@run null
-            val file = EmbeddingModelRules.pick(
-                configured = settings.embeddingModelFile.takeIf { it.isNotBlank() },
-                installed = embeddingInstalled,
-                curatedOrder = EmbeddingCatalog.curatedOrder,
-            )
-            val entry = file?.let { LitertEmbeddingCatalog.entryFor(it) } ?: return@run null
-            // The window that will actually be loaded, which is the override when there is one.
-            val window = settings.embeddingSignature.takeIf { it > 0 } ?: entry.signature
-            stringResource(
-                if (entry.vision) {
-                    R.string.assistant_page_embedding_facts_vision
-                } else {
-                    R.string.assistant_page_embedding_facts
-                },
-                entry.dim,
-                window,
-            )
-        }
-
         CardGroup {
             item(
                 headlineContent = { Text(stringResource(R.string.assistant_page_embedding_model)) },
@@ -912,8 +917,6 @@ private fun AssistantMemoryContent(
             onDismiss = { showLibraryDirPicker = false },
         )
     }
-
-    val cloudSelected = CloudEmbeddingRules.isCloud(settings.embeddingBackend)
 
     if (showEmbeddingModelPicker) {
         AlertDialog(
