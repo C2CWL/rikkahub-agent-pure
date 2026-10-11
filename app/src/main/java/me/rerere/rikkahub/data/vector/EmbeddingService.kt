@@ -1,7 +1,9 @@
 package me.rerere.rikkahub.data.vector
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import me.rerere.llamacpp.LlamaCppEmbedder
 import me.rerere.llamacpp.LlamaCppEmbeddingCatalog
 import me.rerere.llamacpp.LlamaCppEmbeddingEntry
@@ -92,13 +94,40 @@ class EmbeddingService(
     private var active: ActiveModel? = null
 
     /**
+     * Runs [block] off the caller's thread, and is the *only* way into the native engine.
+     *
+     * Loading a model reads a few hundred megabytes off disk and compiles it; embedding a batch
+     * runs a forward pass per document. Both block whichever thread they are started on, for as
+     * long as they take. The callers are spread across the app and several of them are reliably on
+     * the main thread: every index coordinator is handed `AppScope`, whose dispatcher is
+     * `Dispatchers.Main` (see `RikkaHubApp.AppScope`), and `ChatService.initializeConversation`
+     * fires the memory and library syncs from there every time a conversation is opened. Measured
+     * on the device, a cold sync of the memory directory is tens of seconds of work -- and it
+     * arrived as an ANR of `RouteActivity` ("Waited 5000ms for MotionEvent"), not as a slow screen.
+     *
+     * The dispatch therefore lives *here*, once, instead of at each call site: a caller cannot
+     * forget it, because there is no other path to [loadLocked]'s file read, [embedDocuments] /
+     * [embedQuery]'s forward pass, or [releaseLocked]'s teardown. [Dispatchers.IO] rather than
+     * [Dispatchers.Default] because a native call blocks its thread rather than merely using it: a
+     * load can hold one for many seconds, which is not something to do to the CPU-bound pool.
+     *
+     * Callers that used to await an embedding on their own thread now suspend instead, which is
+     * what a search or a background index round wants.
+     */
+    private suspend fun <T> onWorker(block: suspend () -> T): T =
+        withContext(Dispatchers.IO) { block() }
+
+    /**
      * Loads the model if it is not loaded yet. Returns null when there is nothing usable to
      * embed with, which callers treat as "semantic search is off", not as an error.
      *
      * A model that fails to load is *not* remembered as failed: the next call tries again, so
      * freeing memory or re-downloading a truncated file fixes the situation without a restart.
      */
-    suspend fun ensureLoaded(): ActiveModel? = lock.withLock {
+    suspend fun ensureLoaded(): ActiveModel? = onWorker { loadLocked() }
+
+    /** The body of [ensureLoaded]; reachable only through [onWorker]. */
+    private suspend fun loadLocked(): ActiveModel? = lock.withLock {
         active?.let { return@withLock it }
 
         // The cloud choice is checked first and answers without a request: which model to use is a
@@ -148,10 +177,10 @@ class EmbeddingService(
      * Throws when no model is available; callers that can live without embeddings check
      * [ensureLoaded] first and skip instead.
      */
-    suspend fun embedDocuments(texts: List<String>): List<FloatArray> {
+    suspend fun embedDocuments(texts: List<String>): List<FloatArray> = onWorker {
         val model = ensureLoaded() ?: error("no embedding model is installed")
-        if (model.isCloud) return embedCloud(model, texts)
-        return texts.map { text -> embedWith(model, model.documentPrefix + text) }
+        if (model.isCloud) embedCloud(model, texts)
+        else texts.map { text -> embedWith(model, model.documentPrefix + text) }
     }
 
     /**
@@ -162,10 +191,10 @@ class EmbeddingService(
      * a mistake that returns plausible results rather than an error, so the two cases are told
      * apart by the type system rather than by a comment.
      */
-    suspend fun embedQuery(text: String): FloatArray {
+    suspend fun embedQuery(text: String): FloatArray = onWorker {
         val model = ensureLoaded() ?: error("no embedding model is installed")
-        if (model.isCloud) return embedCloud(model, listOf(text)).single()
-        return embedWith(model, model.queryPrefix + text)
+        if (model.isCloud) embedCloud(model, listOf(text)).single()
+        else embedWith(model, model.queryPrefix + text)
     }
 
     private suspend fun embedWith(model: ActiveModel, text: String): FloatArray {
@@ -202,7 +231,10 @@ class EmbeddingService(
      * megabytes of idle weights through a phone's whole idle period is exactly the kind of thing
      * that makes a background feature feel expensive.
      */
-    suspend fun release() = lock.withLock {
+    suspend fun release() = onWorker { releaseLocked() }
+
+    /** The body of [release]; reachable only through [onWorker]. */
+    private suspend fun releaseLocked() = lock.withLock {
         val current = active
         if (current != null) {
             // Nothing is held for a cloud model: what it costs is the request, not a resident copy

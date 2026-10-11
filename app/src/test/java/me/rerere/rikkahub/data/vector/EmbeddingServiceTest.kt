@@ -6,6 +6,7 @@ import me.rerere.llamacpp.LlamaCppEmbedNative
 import me.rerere.llamacpp.LlamaCppEmbedder
 import me.rerere.llamacpp.LlamaCppEmbeddingEntry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -28,6 +29,9 @@ class EmbeddingServiceTest {
     private class RecordingNative(private val dim: Int) : LlamaCppEmbedNative {
         val embedded = mutableListOf<String>()
 
+        /** The thread each [embed] call ran on; the main-thread test at the bottom reads this. */
+        val threads = mutableListOf<Thread>()
+
         override fun loadModel(path: String): Long = MODEL
         override fun freeModel(handle: Long) = Unit
         override fun modelInfo(handle: Long): String = """{"weights_bytes":1000}"""
@@ -38,6 +42,7 @@ class EmbeddingServiceTest {
 
         override fun embed(handle: Long, text: String): FloatArray {
             embedded += text
+            threads += Thread.currentThread()
             return FloatArray(dim) { 1f }
         }
 
@@ -222,6 +227,34 @@ class EmbeddingServiceTest {
         assertEquals(CloudEmbeddingRules.EMBED_BATCH, cloud.batches[0].size)
         assertEquals(1, cloud.batches[2].size)
         assertEquals(texts.indices.map { (it + 1).toFloat() }, vectors.map { it[0] })
+    }
+
+    /**
+     * The model must never run on the thread that asked for the vector.
+     *
+     * This is the regression guard for a device ANR: every index coordinator is handed
+     * `AppScope`, whose dispatcher is `Dispatchers.Main` (see `RikkaHubApp.AppScope`), and
+     * `ChatService.initializeConversation` fires the memory and library syncs from there on every
+     * conversation *open*. The native call used to happen inline, so opening a conversation ahead
+     * of the five-minute debounce embedded the whole memory directory on the main thread and the
+     * system killed `RouteActivity`: "Waited 5000ms for MotionEvent" (captured as
+     * `data_app_anr` in dropbox, 2026-10-11 19:28). [EmbeddingService.onWorker] is now the only
+     * way in, and this is what keeps it that way.
+     */
+    @Test
+    fun `an embedding never runs on the calling thread`() = runBlocking {
+        val native = RecordingNative(DIM)
+        val service = serviceFor(native, ASYMMETRIC_FILE, asymmetric)
+        val caller = Thread.currentThread()
+
+        service.embedDocuments(listOf("alpha"))
+        service.embedQuery("gamma")
+
+        assertEquals(2, native.threads.size)
+        assertTrue(
+            "the model ran on the caller's thread: ${native.threads.map { it.name }}",
+            native.threads.none { it === caller },
+        )
     }
 
     private companion object {
