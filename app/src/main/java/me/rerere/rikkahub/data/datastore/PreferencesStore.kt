@@ -1149,10 +1149,18 @@ data class Settings(
     /**
      * Whether the local embedding model runs on the GPU.
      *
-     * Off by default, and deliberately not a per-device guess: the GPU path is faster here (~63ms
-     * against ~57ms for a text) but is **not** the same function - the same sentence comes back with
-     * cosine 0.9997 between the two, so an index built on one accelerator is very slightly wrong for
-     * the other. One accelerator per index is the rule, and CPU is the one that was verified first.
+     * Off by default, and deliberately not a per-device guess: it is **not** the same function as
+     * the CPU - the same sentence comes back with cosine 0.9997 between the two - so an index built
+     * on one accelerator is very slightly wrong for the other, in a way nothing downstream can
+     * detect. One accelerator per index is the rule, and the accelerator is part of
+     * `EmbeddingService.ActiveModel.modelId`, so flipping this makes every stored chunk stale and
+     * the next round rebuilds instead of mixing.
+     *
+     * Not a speed claim either way, because the measurements do not support one: for a *text* the
+     * two are within noise on this hardware (~57 ms on the CPU against ~63 ms on the GPU, i.e. the
+     * GPU loses the per-call overhead). The half where the GPU should win is the vision tower - an
+     * image costs ~2.1 s against ~60 ms for a text - and that one is still pinned to the CPU; see
+     * the note on `visionBackend` in `LitertLmEmbedder`.
      */
     val embeddingUseGpu: Boolean = false,
     /**

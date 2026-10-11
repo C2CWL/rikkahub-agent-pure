@@ -125,9 +125,26 @@ class EmbeddingService(
          * what keeps two models' vectors apart, and that is known before the first call.
          */
         val cloud: CloudEmbeddingCandidate? = null,
+        /**
+         * The accelerator the vectors come from, lower-case, or null when it is not a factor.
+         *
+         * Set for a `.litertlm` (from the engine that actually opened), null for llama.cpp and for
+         * a cloud model.
+         *
+         * It belongs in [modelId] rather than in a comment because the two accelerators are not the
+         * same function: the same sentence comes back with cosine 0.9997 between them, small enough
+         * that nothing downstream would ever notice - the index would just rank slightly worse for
+         * everything embedded before the switch, and only on the device where it happened. Leaving
+         * it out is what the switch would otherwise do, because it changes no file name and every
+         * staleness check here compares *this* string. With it in, flipping the switch is the
+         * ordinary "the index was built with a different model" case, which every source already
+         * detects and rebuilds.
+         */
+        val accelerator: String? = null,
     ) {
         /** What goes into `vector_chunks.model_id`. */
-        val modelId: String get() = EmbeddingModelRules.modelIdOf(fileName)
+        val modelId: String
+            get() = EmbeddingModelRules.modelIdOf(fileName) + accelerator?.let { "#$it" }.orEmpty()
 
         /** True when the vectors are computed off the device, from text that is sent to do it. */
         val isCloud: Boolean get() = cloud != null
@@ -238,6 +255,9 @@ class EmbeddingService(
             documentPrefix = entry.documentPrefix,
             litert = true,
             vision = entry.vision,
+            // What the engine actually came up on, so the identity of every row it writes reflects
+            // the accelerator that produced it.
+            accelerator = info.accelerator,
         )
     }
 

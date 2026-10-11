@@ -25,6 +25,17 @@ enum class LitertEmbedBackend { CPU, GPU, NPU }
 data class LitertEmbedInfo(
     val dim: Int,
     val signature: Int,
+    /**
+     * The accelerator the engine came up on, lower-case (`cpu`, `gpu`, `npu`).
+     *
+     * Reported because it is part of the model's *identity* as far as the index is concerned: the
+     * two accelerators do not compute the same function - the same sentence comes back with cosine
+     * 0.9997 between them - so a chunk embedded on one is slightly wrong for a query embedded on the
+     * other. Read off the engine that is actually running rather than off the setting, so the
+     * identity cannot disagree with the vectors that were produced. See
+     * `EmbeddingService.ActiveModel.modelId`.
+     */
+    val accelerator: String,
 )
 
 /**
@@ -80,8 +91,14 @@ class RealLitertEmbedNative : LitertEmbedNative {
             EmbeddingEngineConfig(
                 modelPath = modelPath,
                 backend = accelerator,
-                // Vision runs on the CPU: this class only ever embeds text, and paying for a GPU
-                // vision tower we do not call would be the expensive half of a multimodal model.
+                // Vision is pinned to the CPU deliberately, and not because this class only embeds
+                // text - it embeds images too ([LitertEmbedSession.embedImage]). It is pinned
+                // because the text and vision towers on one GPU is the combination nobody has run:
+                // the SDK is asked for two backends and returns no error when the second one cannot
+                // come up, so the failure mode would be a silent fallback rather than a load that
+                // does not work. Images are the expensive half (~2.1s against ~60ms for a text), so
+                // this is the open question about the GPU switch, not a settled one - see
+                // `Settings.embeddingUseGpu`.
                 visionBackend = Backend.CPU(),
                 cacheDir = cacheDir,
                 // Picks which of the file's input signatures to load -- see the comment on
@@ -154,9 +171,13 @@ class LitertLmEmbedder(
 
         unloadLocked()
 
+        // Asked once: [backend] is a lambda so the setting cannot lag a change, but the engine that
+        // opens is the one whose name has to end up in the identity, so both read this one answer.
+        val chosen = backend()
+
         val opened = native.open(
             modelPath = path,
-            backend = backend(),
+            backend = chosen,
             nativeLibraryDir = nativeLibraryDir(),
             cacheDir = cacheDir(),
             signature = signature,
@@ -174,7 +195,11 @@ class LitertLmEmbedder(
 
         session = opened
         loadedPath = path
-        LitertEmbedInfo(dim = measured.size, signature = signature).also { info = it }
+        LitertEmbedInfo(
+            dim = measured.size,
+            signature = signature,
+            accelerator = chosen.name.lowercase(),
+        ).also { info = it }
     }
 
     /**

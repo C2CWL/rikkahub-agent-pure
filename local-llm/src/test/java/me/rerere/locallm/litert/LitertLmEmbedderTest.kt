@@ -100,6 +100,17 @@ class LitertLmEmbedderTest {
     }
 
     @Test
+    fun `load reports the accelerator the engine came up on`() = runBlocking {
+        // The name goes into the identity of every vector this model produces, so it has to come
+        // from the engine that opened rather than from the setting that asked for it.
+        val gpu = LitertLmEmbedder(native = FakeNative(), backend = { LitertEmbedBackend.GPU })
+        assertEquals("gpu", gpu.load("/models/a.litertlm", signature = 512).accelerator)
+
+        val cpu = LitertLmEmbedder(native = FakeNative(), backend = { LitertEmbedBackend.CPU })
+        assertEquals("cpu", cpu.load("/models/a.litertlm", signature = 512).accelerator)
+    }
+
+    @Test
     fun `loading the same file again is a no-op`() = runBlocking {
         val native = FakeNative()
         val embedder = LitertLmEmbedder(native = native)

@@ -758,7 +758,10 @@ private fun AssistantMemoryContent(
                             }
                             // The two accelerators do not produce identical vectors (cosine 0.9997
                             // on the same sentence), and a vector is only comparable to the ones
-                            // stored beside it, so switching rebuilds rather than mixes.
+                            // stored beside it. The accelerator is part of the model identity, so
+                            // every stored chunk goes stale and this sync rebuilds rather than
+                            // mixing - the comment is here to say that it is not the *sync* that
+                            // makes it safe, but the identity.
                             memoryIndex.requestSync(assistant, minIntervalMs = 0L)
                         },
                     )

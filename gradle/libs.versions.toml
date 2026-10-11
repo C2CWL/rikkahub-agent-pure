@@ -85,9 +85,11 @@ genaiPrompt = "1.0.0-beta2"
 # The old note here claimed 0.14.0 "moves the GPU backend from OpenCL/GLES to Dawn/WebGPU-on-Vulkan".
 # That was wrong: in LiteRT-LM's source WebGPU is an opt-in build (`--config=android_webgpu`,
 # `-DLITERT_USE_WEBGPU_ACCELERATOR`), and `strings` on the Android .so shows OpenCL is still there
-# and still the default. What is true is the *observation* that this device's Adreno 830 spins at
-# 100% CPU on 0.18.0's GPU path -- so the GPU path stays opt-in and unproven here (see
-# AcceleratorProbe), but the reason to stay below 0.14 is gone.
+# and still the default. The observation that briefly replaced it - "this device's Adreno 830 spins
+# at 100% CPU on the GPU path" - is wrong as well: the GPU backend has since run the embedding model
+# on this very device (SM8750 / Adreno 830, 2026-10-11) with no problem at all. GPU here is an
+# ordinary user-facing switch (`Settings.embeddingUseGpu`), not a guarded experiment. What remains
+# true is only that the 0.14.0 changelog claim was wrong, so the reason to stay below 0.14 is gone.
 litertlm = "0.17.1"
 snakeyaml = "2.6"
 # Vico — Compose-native charts, used by the statistics page's daily usage chart.

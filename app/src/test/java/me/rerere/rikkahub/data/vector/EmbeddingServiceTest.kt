@@ -257,6 +257,34 @@ class EmbeddingServiceTest {
         )
     }
 
+    /**
+     * The accelerator is part of what a vector *is*.
+     *
+     * LiteRT's two accelerators do not compute the same function - the same sentence comes back
+     * with cosine 0.9997 between them - so an index that mixed them would rank slightly worse for
+     * everything embedded before the switch, and would report nothing. Every staleness check in
+     * this package is a comparison of `modelId`, which is why the accelerator has to be inside it:
+     * that is what makes flipping the GPU switch rebuild rather than mix.
+     */
+    @Test
+    fun `a LiteRT model's identity carries the accelerator it ran on`() {
+        val cpu = EmbeddingService.ActiveModel(
+            fileName = "eg2.litertlm",
+            dim = 768,
+            contextTokens = 512,
+            accelerator = "cpu",
+        )
+        val gpu = cpu.copy(accelerator = "gpu")
+
+        assertEquals("eg2.litertlm#cpu", cpu.modelId)
+        assertEquals("eg2.litertlm#gpu", gpu.modelId)
+
+        // A GGUF has one implementation, so its identity is exactly what it always was - an index
+        // built before this existed must not be invalidated by it.
+        val gguf = EmbeddingService.ActiveModel(fileName = "a.gguf", dim = 768, contextTokens = 8192)
+        assertEquals("a.gguf", gguf.modelId)
+    }
+
     private companion object {
         const val ASYMMETRIC_FILE = "asymmetric-q8_0.gguf"
         const val DIM = 512
