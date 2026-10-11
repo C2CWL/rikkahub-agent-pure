@@ -59,6 +59,14 @@ class EmbeddingService(
     private val litert: LitertLmEmbedder = LitertLmEmbedder(),
     /** The curated `.litertlm` entry for a file name, which carries its signature and prefixes. */
     private val litertEntryFor: (String) -> LitertEmbeddingEntry? = LitertEmbeddingCatalog::entryFor,
+    /**
+     * The user's signature override, or null to use the catalogue's.
+     *
+     * Asked on every load rather than captured, like [cloudChoice]: the value is what decides the
+     * engine's arena and its longest accepted text, so it must not lag a settings change by a
+     * launch. The catalogue's own choice is what an untouched install answers.
+     */
+    private val configuredSignature: suspend () -> Int? = { null },
     private val curatedOrder: List<String> = EmbeddingCatalog.curatedOrder,
     /** Prefix lookup, injectable so a test can exercise the behaviour without the catalogue. */
     private val entryFor: (String) -> LlamaCppEmbeddingEntry? = LlamaCppEmbeddingCatalog::entryFor,
@@ -185,7 +193,13 @@ class EmbeddingService(
      */
     private suspend fun loadLitert(fileName: String, file: File): ActiveModel? {
         val entry = litertEntryFor(fileName) ?: return null
-        val info = litert.load(file.absolutePath, entry.signature)
+        // The user's override wins, but only if it is one the file could plausibly ship: the engine
+        // rejects a signature the file does not have, and a typo in a preference is not worth a
+        // failed load.
+        val signature = configuredSignature()
+            ?.takeIf { it in LitertEmbeddingCatalog.SIGNATURES }
+            ?: entry.signature
+        val info = litert.load(file.absolutePath, signature)
         return ActiveModel(
             fileName = fileName,
             dim = info.dim,

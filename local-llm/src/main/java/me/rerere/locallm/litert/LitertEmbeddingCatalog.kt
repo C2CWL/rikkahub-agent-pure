@@ -100,6 +100,9 @@ object LitertEmbeddingCatalog {
         ),
     )
 
+    /** Which input signatures the file ships. The override is validated against this list. */
+    val SIGNATURES: List<Int> = listOf(128, 256, 512, 1024, 2048, 8192)
+
     fun entryFor(fileName: String): LitertEmbeddingEntry? =
         ENTRIES.firstOrNull { it.file == fileName.substringAfterLast('/') }
 

@@ -210,6 +210,8 @@ class SettingsStore(
         val LIBRARY_IMAGE_SUMMARY = booleanPreferencesKey("library_image_summary")
         val LIBRARY_IMAGE_PROMPT = stringPreferencesKey("library_image_prompt")
         val EMBEDDING_NATIVE_IMAGES = booleanPreferencesKey("embedding_native_images")
+        val EMBEDDING_USE_GPU = booleanPreferencesKey("embedding_use_gpu")
+        val EMBEDDING_SIGNATURE = intPreferencesKey("embedding_signature")
         val COMPRESS_MODEL = stringPreferencesKey("compress_model")
         val COMPRESS_PROMPT = stringPreferencesKey("compress_prompt")
         val ENABLE_AUTO_COMPACTION = booleanPreferencesKey("enable_auto_compaction")
@@ -340,6 +342,8 @@ class SettingsStore(
                 preferences[LIBRARY_IMAGE_SUMMARY] = settings.libraryImageSummary
                 preferences[LIBRARY_IMAGE_PROMPT] = settings.libraryImagePrompt
                 preferences[EMBEDDING_NATIVE_IMAGES] = settings.embeddingNativeImages
+                preferences[EMBEDDING_USE_GPU] = settings.embeddingUseGpu
+                preferences[EMBEDDING_SIGNATURE] = settings.embeddingSignature
                 preferences[COMPRESS_MODEL] = settings.compressModelId.toString()
                 preferences[COMPRESS_PROMPT] = settings.compressPrompt
                 preferences[ENABLE_AUTO_COMPACTION] = settings.enableAutoCompaction
@@ -461,6 +465,8 @@ class SettingsStore(
                 embeddingCloudModel = preferences[EMBEDDING_CLOUD_MODEL] ?: "",
                 libraryImageSummary = preferences[LIBRARY_IMAGE_SUMMARY] ?: false,
                 embeddingNativeImages = preferences[EMBEDDING_NATIVE_IMAGES] ?: true,
+                embeddingUseGpu = preferences[EMBEDDING_USE_GPU] ?: false,
+                embeddingSignature = preferences[EMBEDDING_SIGNATURE] ?: 0,
                 libraryImagePrompt = preferences[LIBRARY_IMAGE_PROMPT] ?: DEFAULT_LIBRARY_IMAGE_PROMPT,
                 compressModelId = preferences[COMPRESS_MODEL]?.let { runCatching { Uuid.parse(it) }.getOrNull() } ?: DEFAULT_AUTO_MODEL_ID,
                 compressPrompt = preferences[COMPRESS_PROMPT] ?: DEFAULT_COMPRESS_PROMPT,
@@ -1140,6 +1146,25 @@ data class Settings(
      * every image takes the recognition/description path that every install used before.
      */
     val embeddingNativeImages: Boolean = true,
+    /**
+     * Whether the local embedding model runs on the GPU.
+     *
+     * Off by default, and deliberately not a per-device guess: the GPU path is faster here (~63ms
+     * against ~57ms for a text) but is **not** the same function - the same sentence comes back with
+     * cosine 0.9997 between the two, so an index built on one accelerator is very slightly wrong for
+     * the other. One accelerator per index is the rule, and CPU is the one that was verified first.
+     */
+    val embeddingUseGpu: Boolean = false,
+    /**
+     * Which of the model's input signatures to load, or 0 for the catalogue's choice.
+     *
+     * 0 rather than a duplicated 512 so that the curated default is the one place it is written
+     * down. It is adjustable at all because the signature is the model's real window - the engine
+     * *refuses* a longer text rather than truncating - so a person indexing long notes may want a
+     * wider one and accept the larger arena. Changing it invalidates the index like any model
+     * change, which is why the screen says so.
+     */
+    val embeddingSignature: Int = 0,
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储

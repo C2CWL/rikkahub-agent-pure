@@ -56,6 +56,9 @@ import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.data.vector.CloudEmbeddingModels
 import me.rerere.rikkahub.data.vector.CloudEmbeddingRules
 import me.rerere.rikkahub.data.vector.EmbeddingReadiness
+import me.rerere.rikkahub.data.vector.EmbeddingCatalog
+import me.rerere.rikkahub.data.vector.EmbeddingModelRules
+import me.rerere.locallm.litert.LitertEmbeddingCatalog
 import me.rerere.rikkahub.ui.components.ai.WorkspaceCwdPickerSheet
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
@@ -503,6 +506,13 @@ private fun AssistantMemoryContent(
                             val name = visionModel?.displayName?.ifBlank { visionModel.modelId }.orEmpty()
                             Text(
                                 when {
+                                    // Redundant while the embedding model reads images itself: the
+                                    // picture is indexed as a picture, and a description could only
+                                    // add a worse answer next to a better one.
+                                    embeddingReadsImages -> stringResource(
+                                        R.string.assistant_page_library_image_summary_not_needed
+                                    )
+
                                     visionModel == null -> stringResource(
                                         R.string.assistant_page_library_image_summary_no_model
                                     )
@@ -527,7 +537,7 @@ private fun AssistantMemoryContent(
                         trailingContent = {
                             Switch(
                                 checked = settings.libraryImageSummary && visionCanSee,
-                                enabled = visionCanSee,
+                                enabled = visionCanSee && !embeddingReadsImages,
                                 onCheckedChange = { on ->
                                     scope.launch {
                                         settingsStore.update { it.copy(libraryImageSummary = on) }
@@ -631,15 +641,52 @@ private fun AssistantMemoryContent(
             embeddingInstalled,
         )
 
+        // What the resolved model is, in one line. Presentation, so it is built here and not in
+        // EmbeddingReadiness: the entries carry the numbers, the screen decides how to say them.
+        // Null when nothing curated resolves - a cloud model, or a GGUF installed by hand.
+        val embeddingModelFacts: String? = run {
+            if (cloudSelected) return@run null
+            val file = EmbeddingModelRules.pick(
+                configured = settings.embeddingModelFile.takeIf { it.isNotBlank() },
+                installed = embeddingInstalled,
+                curatedOrder = EmbeddingCatalog.curatedOrder,
+            )
+            val entry = file?.let { LitertEmbeddingCatalog.entryFor(it) } ?: return@run null
+            // The window that will actually be loaded, which is the override when there is one.
+            val window = settings.embeddingSignature.takeIf { it > 0 } ?: entry.signature
+            stringResource(
+                if (entry.vision) {
+                    R.string.assistant_page_embedding_facts_vision
+                } else {
+                    R.string.assistant_page_embedding_facts
+                },
+                entry.dim,
+                window,
+            )
+        }
+
         CardGroup {
             item(
                 headlineContent = { Text(stringResource(R.string.assistant_page_embedding_model)) },
                 supportingContent = {
-                    Text(
-                        text = EmbeddingReadiness.label(settings).ifEmpty {
-                            stringResource(R.string.assistant_page_embedding_model_auto)
+                    Column {
+                        Text(
+                            text = EmbeddingReadiness.label(settings).ifEmpty {
+                                stringResource(R.string.assistant_page_embedding_model_auto)
+                            }
+                        )
+                        // What the model actually is, when it is one of ours: the width and the
+                        // window are the two facts a person cannot see anywhere else, and the
+                        // window is the one that changes what gets indexed.
+                        val facts = embeddingModelFacts
+                        if (facts != null) {
+                            Text(
+                                text = facts,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                    )
+                    }
                 },
                 trailingContent = {
                     Icon(
@@ -679,6 +726,35 @@ private fun AssistantMemoryContent(
                             // The pictures already in the library are worth indexing properly now
                             // rather than at the next scheduled round.
                             libraryIndex.requestSync(assistant, minIntervalMs = 0L)
+                        },
+                    )
+                },
+            )
+            item(
+                headlineContent = { Text(stringResource(R.string.assistant_page_embedding_gpu)) },
+                supportingContent = {
+                    Text(
+                        if (settings.embeddingUseGpu) {
+                            stringResource(R.string.assistant_page_embedding_gpu_on)
+                        } else {
+                            stringResource(R.string.assistant_page_embedding_gpu_off)
+                        }
+                    )
+                },
+                trailingContent = {
+                    Switch(
+                        checked = settings.embeddingUseGpu,
+                        // Only a local model can use the device's GPU; a provider's endpoint has its
+                        // own hardware, and there is nothing here to switch.
+                        enabled = !cloudSelected,
+                        onCheckedChange = { on ->
+                            scope.launch {
+                                settingsStore.update { it.copy(embeddingUseGpu = on) }
+                            }
+                            // The two accelerators do not produce identical vectors (cosine 0.9997
+                            // on the same sentence), and a vector is only comparable to the ones
+                            // stored beside it, so switching rebuilds rather than mixes.
+                            memoryIndex.requestSync(assistant, minIntervalMs = 0L)
                         },
                     )
                 },
@@ -924,6 +1000,43 @@ private fun AssistantMemoryContent(
                                 showEmbeddingModelPicker = false
                             },
                         )
+                        // The window, and only for a model whose window we choose. A
+                        // GGUF carries its own, so offering this for one would be a
+                        // control with nothing behind it.
+                        if (LitertEmbeddingCatalog.entryFor(settings.embeddingModelFile) != null) {
+                            Text(
+                                text = stringResource(R.string.assistant_page_embedding_window),
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(top = 10.dp),
+                            )
+                            EmbeddingChoiceRow(
+                                label = stringResource(R.string.assistant_page_embedding_window_auto),
+                                selected = settings.embeddingSignature <= 0,
+                                onClick = {
+                                    scope.launch {
+                                        settingsStore.update { it.copy(embeddingSignature = 0) }
+                                    }
+                                    memoryIndex.requestSync(assistant, minIntervalMs = 0L)
+                                },
+                            )
+                            LitertEmbeddingCatalog.SIGNATURES.forEach { signature ->
+                                EmbeddingChoiceRow(
+                                    label = stringResource(
+                                        R.string.assistant_page_embedding_window_value,
+                                        signature,
+                                    ),
+                                    selected = settings.embeddingSignature == signature,
+                                    onClick = {
+                                        scope.launch {
+                                            settingsStore.update {
+                                                it.copy(embeddingSignature = signature)
+                                            }
+                                        }
+                                        memoryIndex.requestSync(assistant, minIntervalMs = 0L)
+                                    },
+                                )
+                            }
+                        }
                         embeddingInstalled.forEach { fileName ->
                             EmbeddingChoiceRow(
                                 label = fileName,
