@@ -110,6 +110,17 @@ class RikkaHubApp : Application() {
         // Init QuickJS native library
         QuickJSLoader.init()
 
+        // SPIKE (feat/moxw-ortqnn): one-shot, file-triggered ONNX-Runtime/QNN probe -- see
+        // OrtQnnProbe. Never merged unless the spike pays off.
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            me.rerere.rikkahub.ortqnn.OrtQnnProbe.runIfRequested(
+                appFilesDir = filesDir,
+                appNativeLibDir = applicationInfo.nativeLibraryDir,
+                appExternalFilesDir = getExternalFilesDir(null),
+                socModel = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SOC_MODEL else "",
+            )
+        }
+
         // delete temp files
         deleteTempFiles()
 

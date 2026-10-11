@@ -281,6 +281,10 @@ dependencies {
     implementation(libs.haze.glass)
     implementation(libs.haze.glass.material3)
 
+    // SPIKE (feat/moxw-ortqnn): ONNX Runtime with the Qualcomm QNN execution provider, for a
+    // device-side answer on whether EmbeddingGemma-2 can run on the Hexagon NPU. arm64-v8a only.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android-qnn:1.29.0")
+
     // koin
     implementation(platform(libs.koin.bom))
     implementation(libs.koin.android)

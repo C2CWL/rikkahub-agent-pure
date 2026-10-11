@@ -153,6 +153,15 @@
     android:usesCleartextTraffic="true"
     tools:targetApi="37">
     <!--
+      SPIKE (feat/moxw-ortqnn): the QNN runtime ships its own FastRPC stub, but since Android 12
+      vendor native libraries are hidden from apps unless declared here. Without this the HTP
+      backend cannot dlopen libcdsprpc.so. Must live under <application>, not <manifest>.
+    -->
+    <uses-native-library
+        android:name="libcdsprpc.so"
+        android:required="false" />
+
+    <!--
       Game Mode preferences. Declares to the OEM Game Mode framework (Pixel, Samsung,
       Asus, Nothing, Xiaomi, etc.) that this app accepts PERFORMANCE and BATTERY mode
       treatment. Local LLM inference is a heavy compute workload that benefits from
