@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.vector
 
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -82,7 +83,10 @@ class MemoryIndexCoordinator(
         }
         lastAttemptAtMs[key] = now
 
-        scope.launch {
+        // `scope` is AppScope, whose dispatcher is Dispatchers.Main (see RikkaHubApp.AppScope),
+        // and this body lists directories, reads files and runs the embedding model. Pinned to
+        // IO here so "runs in the background" in the KDoc above is what actually happens.
+        scope.launch(Dispatchers.IO) {
             val report = runCatching { syncNow(assistant) }
                 .onFailure { Log.d(TAG, "background sync failed", it) }
                 .getOrNull()

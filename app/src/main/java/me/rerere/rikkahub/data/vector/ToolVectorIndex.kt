@@ -3,6 +3,7 @@ package me.rerere.rikkahub.data.vector
 import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -158,7 +159,10 @@ class ToolVectorIndex(
      */
     fun prewarm(entries: List<ToolCatalogEntry>) {
         if (entries.isEmpty()) return
-        scope.launch {
+        // `scope` is AppScope, whose dispatcher is Dispatchers.Main (see RikkaHubApp.AppScope),
+        // and this body lists directories, reads files and runs the embedding model. Pinned to
+        // IO here so "runs in the background" in the KDoc above is what actually happens.
+        scope.launch(Dispatchers.IO) {
             runCatching { prepare(entries) }
                 .onFailure { Log.d(TAG, "tool vector prewarm failed", it) }
         }
