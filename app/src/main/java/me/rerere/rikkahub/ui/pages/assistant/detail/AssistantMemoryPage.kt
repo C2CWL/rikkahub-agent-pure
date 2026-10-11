@@ -981,6 +981,44 @@ private fun AssistantMemoryContent(
                             }
                         }
 
+                        // The LiteRT entries, after the GGUFs rather than merged with them: these
+                        // are the ones that can read a picture, and the only ones whose window is
+                        // picked at load time, so their label says both.
+                        embeddingVm.downloadableLitert.forEach { entry ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = entry.displayName,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                    Text(
+                                        text = stringResource(
+                                            R.string.assistant_page_embedding_litert_size,
+                                            (entry.sizeBytes / 1_000_000L).toInt(),
+                                            entry.dim,
+                                            entry.contextTokens,
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        embeddingVm.download(entry) {
+                                            memoryIndex.requestSync(assistant, minIntervalMs = 0L)
+                                        }
+                                    },
+                                    enabled = embeddingDownload == null,
+                                ) {
+                                    Text(stringResource(R.string.assistant_page_embedding_download))
+                                }
+                            }
+                        }
+
                         embeddingDownload?.let { inFlight ->
                             Column(
                                 modifier = Modifier
