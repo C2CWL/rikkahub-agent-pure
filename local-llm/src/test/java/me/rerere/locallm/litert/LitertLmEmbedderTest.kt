@@ -1,6 +1,7 @@
 package me.rerere.locallm.litert
 
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -25,10 +26,17 @@ class LitertLmEmbedderTest {
     ) : LitertEmbedSession {
         var closed = false
             private set
+        var lastImageBytes: ByteArray? = null
 
         override fun embed(texts: List<String>): List<FloatArray> {
             failOnEmbed?.let { throw it }
             return texts.map { text -> FloatArray(dim) { (text.length % 7).toFloat() } }
+        }
+
+        override fun embedImage(bytes: ByteArray): FloatArray {
+            failOnEmbed?.let { throw it }
+            lastImageBytes = bytes
+            return FloatArray(dim) { (bytes.size % 5).toFloat() }
         }
 
         override fun close() {
@@ -162,6 +170,26 @@ class LitertLmEmbedderTest {
         embedder.load("/models/a.litertlm", signature = 512)
 
         assertEquals(768, embedder.embedNormalized("hello").size)
+    }
+
+    @Test
+    fun `embedImage returns one vector and hands the bytes through untouched`() = runBlocking {
+        val native = FakeNative(dim = 768)
+        val embedder = LitertLmEmbedder(native = native)
+        embedder.load("/models/a.litertlm", signature = 512)
+
+        val bytes = byteArrayOf(1, 2, 3, 4)
+        val vector = embedder.embedImage(bytes)
+
+        assertEquals(768, vector.size)
+        assertArrayEquals(bytes, native.sessions.single().lastImageBytes)
+    }
+
+    @Test
+    fun `embedImage throws when nothing is loaded`() = runBlocking {
+        val embedder = LitertLmEmbedder(native = FakeNative())
+        val thrown = runCatching { embedder.embedImage(byteArrayOf(1)) }.exceptionOrNull()
+        assertTrue(thrown is IllegalStateException)
     }
 
     @Test

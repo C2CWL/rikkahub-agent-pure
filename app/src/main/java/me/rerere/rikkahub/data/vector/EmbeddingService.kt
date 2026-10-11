@@ -100,6 +100,14 @@ class EmbeddingService(
          */
         val litert: Boolean = false,
         /**
+         * True when this model embeds images as images.
+         *
+         * The one fact an image indexer needs before it decides *how* to handle a picture: embed
+         * it, or feed the model whatever someone else read out of it. False for every GGUF here,
+         * for a cloud model, and for a text-only `.litertlm`.
+         */
+        val vision: Boolean = false,
+        /**
          * The cloud model behind this, or null when it is the local file.
          *
          * [dim] is 0 when this is set: the width is the provider's business and is only known once
@@ -186,6 +194,7 @@ class EmbeddingService(
             queryPrefix = entry.queryPrefix,
             documentPrefix = entry.documentPrefix,
             litert = true,
+            vision = entry.vision,
         )
     }
 
@@ -216,6 +225,37 @@ class EmbeddingService(
         val model = ensureLoaded() ?: error("no embedding model is installed")
         if (model.isCloud) return embedCloud(model, texts)
         return texts.map { text -> embedWith(model, model.documentPrefix + text) }
+    }
+
+    /**
+     * Whether the model in effect can embed a picture *as a picture*.
+     *
+     * The answer is what decides how an image gets indexed: true means the bytes go straight to the
+     * engine, false means the caller has to go through whatever read the image for it (on-device
+     * text recognition, or a description from a vision chat model). That fallback is always worse -
+     * it can only index what the reader happened to notice - so it is deliberately a *degradation*
+     * rather than a parallel path, and the caller has to ask before choosing.
+     *
+     * False for a cloud model, whatever it is: this is about the local engine's own ability, and a
+     * provider's embedding endpoint takes text.
+     */
+    suspend fun canEmbedImages(): Boolean = ensureLoaded()?.vision == true
+
+    /**
+     * Embeds one image, L2-normalised, with no task prefix (the model card's prefixes are for text).
+     *
+     * Throws when the model in effect cannot see - the caller is expected to have asked
+     * [canEmbedImages] first and taken the fallback path otherwise.
+     */
+    suspend fun embedImage(bytes: ByteArray): FloatArray {
+        val model = ensureLoaded() ?: error("no embedding model is installed")
+        require(model.vision) { "the embedding model in effect cannot embed images" }
+        if (model.isCloud) error("a cloud embedding model cannot embed images")
+        val vector = litert.embedImage(bytes)
+        require(vector.size == model.dim) {
+            "the model returned ${vector.size} values, expected ${model.dim}"
+        }
+        return vector
     }
 
     /**

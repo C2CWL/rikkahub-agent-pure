@@ -37,6 +37,15 @@ data class LitertEmbedInfo(
 interface LitertEmbedSession : AutoCloseable {
     /** Order is the contract: the caller zips the answer back onto its own list. */
     fun embed(texts: List<String>): List<FloatArray>
+
+    /**
+     * Embeds one image, from its encoded bytes.
+     *
+     * No task prefix: the model card is explicit that the instruction prefixes apply to text, and
+     * an image is passed as it is. Only a model whose catalogue entry says `vision` should ever
+     * reach this, and the engine refuses it outright on a text-only file.
+     */
+    fun embedImage(bytes: ByteArray): FloatArray
 }
 
 /** The seam over the SDK, so [LitertLmEmbedder] is testable without native code. */
@@ -90,6 +99,12 @@ class RealLitertEmbedNative : LitertEmbedNative {
                     EmbeddingOptions(normalize = true),
                 ).embedding
             }
+
+            // No prefix, and no text: the bytes go in as they are.
+            override fun embedImage(bytes: ByteArray): FloatArray = engine.computeEmbedding(
+                listOf(InputData.Image(bytes)),
+                EmbeddingOptions(normalize = true),
+            ).embedding
 
             override fun close() {
                 engine.close()
@@ -173,9 +188,22 @@ class LitertLmEmbedder(
         open.embed(listOf(text)).single()
     }
 
+    /**
+     * Embeds one image, L2-normalised.
+     *
+     * A separate door from [embedNormalized] rather than an overload of it, because the two take
+     * different arguments *and* only the text one is allowed a task prefix. It costs an order of
+     * magnitude more than a text - the vision tower runs per image, measured at ~2.1s against
+     * ~60ms on this hardware - which is what forces every caller that walks a directory to cap how
+     * many images it does per round.
+     */
+    suspend fun embedImage(bytes: ByteArray): FloatArray = lock.withLock {
+        val open = session ?: error("no .litertlm embedding model is loaded")
+        open.embedImage(bytes)
+    }
+
     /** Frees the engine and whatever the accelerator held on to. */
     suspend fun unload() = lock.withLock { unloadLocked() }
-
     private fun unloadLocked() {
         val open = session ?: return
         session = null

@@ -65,6 +65,17 @@ class LitertEmbeddingCatalogTest {
         assertEquals("title: none | text: ", entry.documentPrefix)
     }
 
+    /**
+     * The 440M is the text+vision variant, and that flag is what decides whether an image is
+     * embedded as an image or handed to the OCR/description fallback. Getting it wrong is silent:
+     * the fallback still produces a vector, just one made from whatever the reader noticed.
+     */
+    @Test
+    fun `the curated model is the one that can see`() {
+        assertTrue(entry.vision)
+        assertTrue(entry.file.contains("text-vision"))
+    }
+
     @Test
     fun `resolveUrl is the huggingface resolve path`() {
         assertEquals(

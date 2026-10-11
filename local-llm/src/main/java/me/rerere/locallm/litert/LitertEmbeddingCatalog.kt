@@ -41,6 +41,17 @@ data class LitertEmbeddingEntry(
     val maxContextTokens: Int,
     /** Which input signature to load. Must be one the file actually ships. */
     val signature: Int,
+    /**
+     * Whether this model embeds images as images.
+     *
+     * True only for the text-vision files. It is a property of the *file*, and everything that
+     * indexes an image reads it to decide between the two ways of handling one: a vision model
+     * embeds the picture itself, while a text-only model can only be fed what someone else read out
+     * of it (on-device OCR, or a description written by a vision model). The second is a fallback
+     * with a ceiling - it is whatever the recogniser or the describer happened to say - so the
+     * difference is worth carrying in the catalogue rather than discovering at run time.
+     */
+    val vision: Boolean,
     /** Text prepended to *documents*. See `LlamaCppEmbeddingEntry` for why this is not optional. */
     val documentPrefix: String,
     /** Text prepended to *queries*. */
@@ -80,6 +91,9 @@ object LitertEmbeddingCatalog {
             // too small to retrieve. 512 is the smallest signature that still holds a real chunk,
             // and the arena stays modest.
             signature = 512,
+            // The 440M is the text+vision variant: its whole point is that a screenshot and a
+            // sentence about it land in the same place, with no OCR and no description in between.
+            vision = true,
             documentPrefix = DOCUMENT_PREFIX,
             queryPrefix = SEARCH_QUERY_PREFIX,
             minMemGb = 4,
