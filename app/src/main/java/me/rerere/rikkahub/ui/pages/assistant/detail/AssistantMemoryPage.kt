@@ -624,6 +624,13 @@ private fun AssistantMemoryContent(
             )
         }
 
+        // Whether the model in effect reads pictures itself - the same question the coordinator
+        // asks before choosing a path, so the switch and the behaviour cannot disagree.
+        val embeddingReadsImages = EmbeddingReadiness.localModelReadsImages(
+            settings,
+            embeddingInstalled,
+        )
+
         CardGroup {
             item(
                 headlineContent = { Text(stringResource(R.string.assistant_page_embedding_model)) },
@@ -644,6 +651,36 @@ private fun AssistantMemoryContent(
                 onClick = {
                     embeddingVm.refresh()
                     showEmbeddingModelPicker = true
+                },
+            )
+            item(
+                headlineContent = {
+                    Text(stringResource(R.string.assistant_page_embedding_native_images))
+                },
+                supportingContent = {
+                    Text(
+                        if (embeddingReadsImages) {
+                            stringResource(R.string.assistant_page_embedding_native_images_desc)
+                        } else {
+                            stringResource(R.string.assistant_page_embedding_native_images_not_vision)
+                        }
+                    )
+                },
+                trailingContent = {
+                    Switch(
+                        // Off when the model cannot see, whatever the setting says: the switch
+                        // describes what will happen, not only what was chosen.
+                        checked = settings.embeddingNativeImages && embeddingReadsImages,
+                        enabled = embeddingReadsImages,
+                        onCheckedChange = { on ->
+                            scope.launch {
+                                settingsStore.update { it.copy(embeddingNativeImages = on) }
+                            }
+                            // The pictures already in the library are worth indexing properly now
+                            // rather than at the next scheduled round.
+                            libraryIndex.requestSync(assistant, minIntervalMs = 0L)
+                        },
+                    )
                 },
             )
             item(

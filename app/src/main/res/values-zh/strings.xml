@@ -2561,6 +2561,9 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="assistant_page_library">文件库</string>
   <string name="assistant_page_library_desc">对工作区里的某个目录做语义检索：代码、笔记、文档（PDF、Word、PPT、EPUB）和图片（截图、带文字的照片，由端侧文字识别读出）。后台建立索引，模型会得到一个 library_search 工具，按内容而不是按文件名去找。</string>
   <string name="assistant_page_library_image_summary">用视觉模型描述图片</string>
+  <string name="assistant_page_embedding_native_images">用模型本身索引图片</string>
+  <string name="assistant_page_embedding_native_images_desc">图片直接以图片嵌入，按画面内容就能搜到 —— 中间不再需要文字识别或描述。每张约 2 秒，分摊在多轮后台索引里。</string>
+  <string name="assistant_page_embedding_native_images_not_vision">当前嵌入模型不能看图 —— 装上 EmbeddingGemma 2 440M（文本 + 视觉）即可开启。</string>
   <string name="assistant_page_library_image_summary_on">文件库里的图片会发送到 %1$s 生成描述。</string>
   <string name="assistant_page_library_image_summary_off">关闭中。开启后，文件库里的每张图片会发送到 %1$s 一次，以便按画面内容被搜到。</string>
   <string name="assistant_page_library_image_summary_no_model">先选一个能看图的模型：设置 → 模型 → OCR 模型。</string>

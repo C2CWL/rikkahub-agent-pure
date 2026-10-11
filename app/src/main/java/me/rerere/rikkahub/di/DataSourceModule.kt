@@ -168,6 +168,12 @@ val dataSourceModule = module {
                 settingsStore = settingsStore,
                 cache = me.rerere.rikkahub.data.vector.ImageSummaryCache(appContext),
             )::describe,
+            // Read per round, so flipping the switch applies to the next sync rather than the next
+            // launch. Default on: a vision embedding model indexes a picture better than anything
+            // that first turns it into words.
+            nativeImagesEnabled = {
+                settingsStore.settingsFlow.value.embeddingNativeImages
+            },
         )
     }
 

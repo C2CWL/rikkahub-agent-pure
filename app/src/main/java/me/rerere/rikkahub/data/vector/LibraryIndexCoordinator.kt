@@ -55,6 +55,14 @@ class LibraryIndexCoordinator(
      */
     private val visionSummary: suspend (path: String, sizeBytes: Long, file: File) -> String? =
         { _, _, _ -> null },
+    /**
+     * Whether the library may hand an image to the embedding model itself.
+     *
+     * Asked per round rather than captured, so turning the switch off takes effect on the next
+     * sync instead of the next launch. Defaults to true, which is what a switch that is on by
+     * default has to mean for the tests and for any caller that predates it.
+     */
+    private val nativeImagesEnabled: () -> Boolean = { true },
 ) {
 
     /** What the settings screen shows, and what a log line is written from. */
@@ -343,6 +351,7 @@ class LibraryIndexCoordinator(
         file: File,
         budget: NativeImageBudget,
     ): FloatArray? {
+        if (!nativeImagesEnabled()) return null
         if (!embeddings.canEmbedImages()) return null
         if (!budget.take()) return null
         return try {

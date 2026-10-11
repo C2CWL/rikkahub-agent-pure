@@ -209,6 +209,7 @@ class SettingsStore(
         val EMBEDDING_CLOUD_MODEL = stringPreferencesKey("embedding_cloud_model")
         val LIBRARY_IMAGE_SUMMARY = booleanPreferencesKey("library_image_summary")
         val LIBRARY_IMAGE_PROMPT = stringPreferencesKey("library_image_prompt")
+        val EMBEDDING_NATIVE_IMAGES = booleanPreferencesKey("embedding_native_images")
         val COMPRESS_MODEL = stringPreferencesKey("compress_model")
         val COMPRESS_PROMPT = stringPreferencesKey("compress_prompt")
         val ENABLE_AUTO_COMPACTION = booleanPreferencesKey("enable_auto_compaction")
@@ -338,6 +339,7 @@ class SettingsStore(
                 preferences[EMBEDDING_CLOUD_MODEL] = settings.embeddingCloudModel
                 preferences[LIBRARY_IMAGE_SUMMARY] = settings.libraryImageSummary
                 preferences[LIBRARY_IMAGE_PROMPT] = settings.libraryImagePrompt
+                preferences[EMBEDDING_NATIVE_IMAGES] = settings.embeddingNativeImages
                 preferences[COMPRESS_MODEL] = settings.compressModelId.toString()
                 preferences[COMPRESS_PROMPT] = settings.compressPrompt
                 preferences[ENABLE_AUTO_COMPACTION] = settings.enableAutoCompaction
@@ -458,6 +460,7 @@ class SettingsStore(
                 embeddingBackend = preferences[EMBEDDING_BACKEND] ?: CloudEmbeddingRules.BACKEND_LOCAL,
                 embeddingCloudModel = preferences[EMBEDDING_CLOUD_MODEL] ?: "",
                 libraryImageSummary = preferences[LIBRARY_IMAGE_SUMMARY] ?: false,
+                embeddingNativeImages = preferences[EMBEDDING_NATIVE_IMAGES] ?: true,
                 libraryImagePrompt = preferences[LIBRARY_IMAGE_PROMPT] ?: DEFAULT_LIBRARY_IMAGE_PROMPT,
                 compressModelId = preferences[COMPRESS_MODEL]?.let { runCatching { Uuid.parse(it) }.getOrNull() } ?: DEFAULT_AUTO_MODEL_ID,
                 compressPrompt = preferences[COMPRESS_PROMPT] ?: DEFAULT_COMPRESS_PROMPT,
@@ -1126,6 +1129,17 @@ data class Settings(
      * callers, two questions, and the cache is keyed by the question as well as the model.
      */
     val libraryImagePrompt: String = DEFAULT_LIBRARY_IMAGE_PROMPT,
+    /**
+     * Whether the library may hand an image to the embedding model *itself*.
+     *
+     * On by default, because it is the version of image search that needs no help: a vision
+     * embedding model puts a picture into the same space as the words about it, with no OCR and no
+     * description in between - and those two only ever index what a reader happened to notice. It
+     * is a switch anyway because it is not free (the vision tower costs ~2.1s per image against
+     * ~60ms for a text) and because somebody may simply not want their photographs embedded. Off,
+     * every image takes the recognition/description path that every install used before.
+     */
+    val embeddingNativeImages: Boolean = true,
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储
