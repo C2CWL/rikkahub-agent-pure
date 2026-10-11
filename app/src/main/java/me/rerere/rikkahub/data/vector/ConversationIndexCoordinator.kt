@@ -3,6 +3,7 @@ package me.rerere.rikkahub.data.vector
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -94,7 +95,10 @@ class ConversationIndexCoordinator(
             return false
         }
         lastAttemptAtMs[key] = now
-        scope.launch { runCatching { syncNow() }.onFailure { Log.d(TAG, "sweep failed", it) } }
+        // `scope` is AppScope, whose dispatcher is Dispatchers.Main (see RikkaHubApp.AppScope),
+        // and this body lists directories, reads files and runs the embedding model. Pinned to
+        // IO here so "runs in the background" in the KDoc above is what actually happens.
+        scope.launch(Dispatchers.IO) { runCatching { syncNow() }.onFailure { Log.d(TAG, "sweep failed", it) } }
         return true
     }
 
@@ -110,7 +114,10 @@ class ConversationIndexCoordinator(
         val previous = lastAttemptAtMs[key] ?: 0L
         if (now - previous < minIntervalMs) return false
         lastAttemptAtMs[key] = now
-        scope.launch {
+        // `scope` is AppScope, whose dispatcher is Dispatchers.Main (see RikkaHubApp.AppScope),
+        // and this body lists directories, reads files and runs the embedding model. Pinned to
+        // IO here so "runs in the background" in the KDoc above is what actually happens.
+        scope.launch(Dispatchers.IO) {
             runCatching { syncConversation(conversationId) }
                 .onFailure { Log.d(TAG, "turn sync failed", it) }
         }
