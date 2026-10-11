@@ -103,23 +103,20 @@ object OrtQnnProbe {
         val htpLib = File(appNativeLibDir, "libQnnHtp.so").absolutePath
         val ctxPath = File(dir, "ortqnn-eg2-ctx.onnx").absolutePath
 
+        // NOTE: soc_model must be NUMERIC with this build (QAIRT 2.42): the chip-family form
+        // ("SM8750") makes it throw "stoi: no conversion". htp_arch alone is enough.
         val attempts = listOf(
-            "A htp(backend_path)+ctx" to Pair(
-                mapOf(
-                    "backend_path" to htpLib,
-                    "soc_model" to SOC_MODEL,
-                    "htp_arch" to HTP_ARCH,
-                ),
-                mapOf("ep.context_enable" to "1", "ep.context_file_path" to ctxPath),
-            ),
             "B htp minimal" to Pair(
                 mapOf("backend_path" to htpLib),
                 emptyMap(),
             ),
-            "C htp tuned + no-cpu-fallback" to Pair(
+            "C htp arch79, no-cpu-fallback" to Pair(
+                mapOf("backend_path" to htpLib, "htp_arch" to HTP_ARCH),
+                mapOf("session.disable_cpu_ep_fallback" to "1"),
+            ),
+            "D htp tuned, no-cpu-fallback" to Pair(
                 mapOf(
                     "backend_path" to htpLib,
-                    "soc_model" to SOC_MODEL,
                     "htp_arch" to HTP_ARCH,
                     "htp_performance_mode" to "burst",
                     "htp_graph_finalization_optimization_mode" to "3",
@@ -127,9 +124,10 @@ object OrtQnnProbe {
                 ),
                 mapOf("session.disable_cpu_ep_fallback" to "1"),
             ),
-            "D cpu (control)" to Pair(emptyMap(), emptyMap()),   // no EP added at all
+            "E cpu (control)" to Pair(emptyMap(), emptyMap()),   // no EP added at all
         )
 
+        var reference: FloatArray? = null
         for ((name, cfg) in attempts) {
             val (epOpts, cfgEntries) = cfg
             say("--- $name ---")
@@ -149,24 +147,49 @@ object OrtQnnProbe {
                 say("  outputs = ${session.outputNames}")
 
                 try {
-                    val ids = LongBuffer.wrap(LongArray(seq) { 2L })
-                    val mask = LongBuffer.wrap(LongArray(seq) { 1L })
+                    // Deterministic but NOT degenerate input: a sentence-ish token sequence.
+                    // (All-BOS input made the fp16 graph emit Inf/NaN, which says nothing.)
+                    val idsArr = LongArray(seq) { i -> if (i == 0) 2L else ((i * 37) % 900 + 100).toLong() }
+                    val maskArr = LongArray(seq) { 1L }
                     val shape = longArrayOf(1, seq.toLong())
-                    OnnxTensor.createTensor(env, ids, shape).use { ti ->
-                        OnnxTensor.createTensor(env, mask, shape).use { tm ->
+                    OnnxTensor.createTensor(env, LongBuffer.wrap(idsArr), shape).use { ti ->
+                        OnnxTensor.createTensor(env, LongBuffer.wrap(maskArr), shape).use { tm ->
+                            var last: FloatArray? = null
                             repeat(3) { i ->
                                 val t1 = System.currentTimeMillis()
                                 val res = session.run(mapOf("input_ids" to ti, "attention_mask" to tm))
                                 val ms = System.currentTimeMillis() - t1
                                 val out = res.get(0)
-                                val desc = if (out is OnnxTensor) {
+                                if (out is OnnxTensor) {
                                     val fb = out.floatBuffer
+                                    val vec = FloatArray(fb.remaining())
                                     var sum = 0.0
-                                    while (fb.hasRemaining()) { val v = fb.get().toDouble(); sum += v * v }
-                                    "shape=${out.info.shape.toList()} l2=${"%.4f".format(kotlin.math.sqrt(sum))}"
-                                } else out.toString()
-                                say("  run[$i] ${ms} ms  $desc")
+                                    var bad = 0
+                                    for (k in vec.indices) {
+                                        vec[k] = fb.get(); val v = vec[k].toDouble()
+                                        if (v.isNaN() || v.isInfinite()) bad++ else sum += v * v
+                                    }
+                                    last = vec
+                                    say("  run[$i] ${ms} ms  l2=${"%.4f".format(kotlin.math.sqrt(sum))} " +
+                                        "bad=$bad  head=${vec.take(3).joinToString { "%.4f".format(it) }}")
+                                }
                                 res.close()
+                            }
+                            last?.let { v ->
+                                val ref = reference
+                                if (ref == null) {
+                                    reference = v
+                                    say("  (kept as the reference vector)")
+                                } else {
+                                    var dot = 0.0; var na = 0.0; var nb = 0.0
+                                    for (k in v.indices) {
+                                        dot += v[k].toDouble() * ref[k].toDouble()
+                                        na += v[k].toDouble() * v[k].toDouble()
+                                        nb += ref[k].toDouble() * ref[k].toDouble()
+                                    }
+                                    val cos = if (na > 0 && nb > 0) dot / kotlin.math.sqrt(na * nb) else Double.NaN
+                                    say("  cosine vs the reference = ${"%.6f".format(cos)}")
+                                }
                             }
                         }
                     }
