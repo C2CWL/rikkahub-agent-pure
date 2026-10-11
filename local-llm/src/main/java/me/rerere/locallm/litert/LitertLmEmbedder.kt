@@ -91,15 +91,20 @@ class RealLitertEmbedNative : LitertEmbedNative {
             EmbeddingEngineConfig(
                 modelPath = modelPath,
                 backend = accelerator,
-                // Vision is pinned to the CPU deliberately, and not because this class only embeds
-                // text - it embeds images too ([LitertEmbedSession.embedImage]). It is pinned
-                // because the text and vision towers on one GPU is the combination nobody has run:
-                // the SDK is asked for two backends and returns no error when the second one cannot
-                // come up, so the failure mode would be a silent fallback rather than a load that
-                // does not work. Images are the expensive half (~2.1s against ~60ms for a text), so
-                // this is the open question about the GPU switch, not a settled one - see
-                // `Settings.embeddingUseGpu`.
-                visionBackend = Backend.CPU(),
+                // Vision follows the text backend, because the vision tower is the half that has
+                // anything to gain: an image costs ~2.1s against ~60ms for a text. Pinning it to
+                // the CPU while the text encoder ran on the GPU would be the wrong half of the
+                // swap. Both towers on the CPU is still one switch away -
+                // `Settings.embeddingUseGpu` off - which is why this follows rather than adding a
+                // knob of its own.
+                visionBackend = when (backend) {
+                    LitertEmbedBackend.GPU -> Backend.GPU()
+                    // NPU falls here rather than following: `visionBackend` accepts any backend,
+                    // but an NPU text tower with an NPU vision tower is a combination nothing has
+                    // run, and the failure mode would be silent. The parts that were measured stay
+                    // where they were measured.
+                    else -> Backend.CPU()
+                },
                 cacheDir = cacheDir,
                 // Picks which of the file's input signatures to load -- see the comment on
                 // [LitertEmbedInfo.signature]. Omitting it makes the engine load the largest one
@@ -143,8 +148,6 @@ class RealLitertEmbedNative : LitertEmbedNative {
  */
 class LitertLmEmbedder(
     private val native: LitertEmbedNative = RealLitertEmbedNative(),
-    /** Chosen per load, from the user's setting; CPU unless they asked for otherwise. */
-    private val backend: () -> LitertEmbedBackend = { LitertEmbedBackend.CPU },
     /** Where the NPU backend would look for its dispatch runtime. */
     private val nativeLibraryDir: () -> String = { "" },
     /** Where the engine may cache its compiled model, so the second load is cheap. */
@@ -161,23 +164,31 @@ class LitertLmEmbedder(
     val loadedFile: String? get() = loadedPath
 
     /**
-     * Opens [path] and returns what it reports about itself.
+     * Opens [path] on [backend] and returns what it reports about itself.
      *
-     * Loading a file that is already open is a no-op for the *same* path, so the service's
-     * per-round `ensureLoaded` does not tear the engine down and rebuild it.
+     * The accelerator is an argument rather than a constructor field because it is decided per load,
+     * by the service that resolved the file: a multimodal model defaults to the GPU (the vision
+     * tower is the half that gains) unless the user has said otherwise, and the setting has to be
+     * read at load time for a change to take effect without a restart. Opening the engine and
+     * reporting its accelerator are therefore one act, and the caller's identity for the vectors
+     * cannot disagree with the engine that produced them.
+     *
+     * Loading a file that is already open is a no-op for the *same* path and *same* backend, so the
+     * service's per-round `ensureLoaded` does not tear the engine down and rebuild it - but a switch
+     * that changes the accelerator does rebuild, because the two do not produce the same vectors.
      */
-    suspend fun load(path: String, signature: Int): LitertEmbedInfo = lock.withLock {
-        info?.let { if (loadedPath == path) return@withLock it }
+    suspend fun load(
+        path: String,
+        signature: Int,
+        backend: LitertEmbedBackend = LitertEmbedBackend.CPU,
+    ): LitertEmbedInfo = lock.withLock {
+        info?.let { if (loadedPath == path && it.accelerator == backend.name.lowercase()) return@withLock it }
 
         unloadLocked()
 
-        // Asked once: [backend] is a lambda so the setting cannot lag a change, but the engine that
-        // opens is the one whose name has to end up in the identity, so both read this one answer.
-        val chosen = backend()
-
         val opened = native.open(
             modelPath = path,
-            backend = chosen,
+            backend = backend,
             nativeLibraryDir = nativeLibraryDir(),
             cacheDir = cacheDir(),
             signature = signature,
@@ -198,7 +209,7 @@ class LitertLmEmbedder(
         LitertEmbedInfo(
             dim = measured.size,
             signature = signature,
-            accelerator = chosen.name.lowercase(),
+            accelerator = backend.name.lowercase(),
         ).also { info = it }
     }
 

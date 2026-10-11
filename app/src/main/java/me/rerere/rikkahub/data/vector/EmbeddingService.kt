@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import me.rerere.llamacpp.LlamaCppEmbedder
 import me.rerere.llamacpp.LlamaCppEmbeddingCatalog
 import me.rerere.llamacpp.LlamaCppEmbeddingEntry
+import me.rerere.locallm.litert.LitertEmbedBackend
 import me.rerere.locallm.litert.LitertEmbeddingCatalog
 import me.rerere.locallm.litert.LitertEmbeddingEntry
 import me.rerere.locallm.litert.LitertLmEmbedder
@@ -69,6 +70,14 @@ class EmbeddingService(
      * launch. The catalogue's own choice is what an untouched install answers.
      */
     private val configuredSignature: suspend () -> Int? = { null },
+    /**
+     * The user's accelerator preference for a `.litertlm`, or null when they have not expressed one.
+     *
+     * Null rather than a boolean because the default is not a constant: a model that embeds images
+     * defaults to the GPU - the vision tower is the half that gains - while a text-only one defaults
+     * to the CPU. See [EmbeddingAcceleratorRules].
+     */
+    private val configuredGpu: suspend () -> Boolean? = { null },
     private val curatedOrder: List<String> = EmbeddingCatalog.curatedOrder,
     /** Prefix lookup, injectable so a test can exercise the behaviour without the catalogue. */
     private val entryFor: (String) -> LlamaCppEmbeddingEntry? = LlamaCppEmbeddingCatalog::entryFor,
@@ -156,6 +165,15 @@ class EmbeddingService(
     private var active: ActiveModel? = null
 
     /**
+     * The [Request.key] that produced [active], or null when nothing is loaded.
+     *
+     * Kept beside the model rather than on it: [ActiveModel] describes the answer, which is what
+     * every caller cares about, while this describes the question. Only read and written under
+     * [lock], by [loadLocked] and [releaseHoldingLock].
+     */
+    private var activeKey: String? = null
+
+    /**
      * Runs [block] off the caller's thread, and is the *only* way into the native engine.
      *
      * Loading a model reads a few hundred megabytes off disk and compiles it; embedding a batch
@@ -169,7 +187,7 @@ class EmbeddingService(
      *
      * The dispatch therefore lives *here*, once, instead of at each call site: a caller cannot
      * forget it, because there is no other path to [loadLocked]'s file read, [embedDocuments] /
-     * [embedQuery]'s forward pass, or [releaseLocked]'s teardown. [Dispatchers.IO] rather than
+     * [embedQuery]'s forward pass, or [releaseHoldingLock]'s teardown. [Dispatchers.IO] rather than
      * [Dispatchers.Default] because a native call blocks its thread rather than merely using it: a
      * load can hold one for many seconds, which is not something to do to the CPU-bound pool.
      *
@@ -188,43 +206,127 @@ class EmbeddingService(
      */
     suspend fun ensureLoaded(): ActiveModel? = onWorker { loadLocked() }
 
+    /**
+     * What the settings and the disk say should be running, resolved without opening anything.
+     *
+     * This is a step of its own because it is the cheap half - one settings read, one directory
+     * listing, one catalogue lookup - and because it is the half that decides whether the expensive
+     * half has to happen at all. Every index round and every search arrives through [ensureLoaded],
+     * so "what should be loaded" has to be re-answered each time; answering it once at first use is
+     * what made a model picked, a GPU switch flipped or a cloud backend turned on take effect at the
+     * next *launch* rather than the next round.
+     */
+    private data class Request(
+        val cloud: CloudEmbeddingCandidate?,
+        val fileName: String,
+        val file: File?,
+        val signature: Int?,
+        val accelerator: LitertEmbedBackend?,
+    ) {
+        /**
+         * A cheap identity of the *request* - compared against the request the resident engine came
+         * from, to decide whether it is still the right one.
+         *
+         * Deliberately not [ActiveModel.modelId]: that one is about the vectors and is written into
+         * every row, while this one also covers the signature, which changes the window without
+         * changing the vector space, and so should reload the engine without invalidating an index.
+         */
+        val key: String
+            get() = cloud?.let { CloudEmbeddingRules.indexModelId(it) }
+                ?: listOf(fileName, signature?.toString().orEmpty(), accelerator?.name.orEmpty())
+                    .joinToString("|")
+    }
+
     /** The body of [ensureLoaded]; reachable only through [onWorker]. */
     private suspend fun loadLocked(): ActiveModel? = lock.withLock {
-        active?.let { return@withLock it }
+        val request = resolve() ?: run {
+            // Nothing usable is selected - a deleted file, an empty models directory, or a cloud
+            // choice that cannot be called with nothing local to fall back to. Drop whatever is
+            // resident rather than keep embedding with a model the user has moved away from.
+            releaseHoldingLock()
+            return@withLock null
+        }
+        if (active != null && activeKey == request.key) return@withLock active
+        releaseHoldingLock()
 
+        val loaded = when {
+            request.cloud != null -> ActiveModel(
+                fileName = CloudEmbeddingRules.indexModelId(request.cloud),
+                dim = 0,
+                contextTokens = CloudEmbeddingRules.contextTokens(request.cloud),
+                cloud = request.cloud,
+            )
+
+            request.accelerator != null -> loadLitert(request)
+            else -> loadLlamaCpp(request)
+        } ?: return@withLock null
+        active = loaded
+        activeKey = request.key
+        loaded
+    }
+
+    /**
+     * Which model should be loaded right now, or null when nothing usable is selected.
+     *
+     * Cheap by construction: settings, a directory listing, a catalogue lookup. Nothing here opens
+     * an engine, which is what lets [loadLocked] ask it on every call.
+     */
+    private suspend fun resolve(): Request? {
         // The cloud choice is checked first and answers without a request: which model to use is a
         // setting, and a "load" that had to reach the network would make every round of background
         // indexing wait on one.
         cloudChoice()?.let { candidate ->
-            val loaded = ActiveModel(
-                fileName = CloudEmbeddingRules.indexModelId(candidate),
-                dim = 0,
-                contextTokens = CloudEmbeddingRules.contextTokens(candidate),
+            return Request(
                 cloud = candidate,
+                fileName = CloudEmbeddingRules.indexModelId(candidate),
+                file = null,
+                signature = null,
+                accelerator = null,
             )
-            active = loaded
-            return@withLock loaded
         }
 
-        val installed = modelDirs().flatMap { dir ->
+        val dirs = modelDirs()
+        val installed = dirs.flatMap { dir ->
             dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
         }
         val fileName = EmbeddingModelRules.pick(
             configured = configuredFileName(),
             installed = installed,
             curatedOrder = curatedOrder,
-        ) ?: return@withLock null
+        ) ?: return null
 
-        val file = modelDirs().asSequence().map { File(it, fileName) }.firstOrNull { it.isFile }
-            ?: return@withLock null
+        val file = dirs.asSequence().map { File(it, fileName) }.firstOrNull { it.isFile } ?: return null
+        if (!EmbeddingModelRules.isLitert(fileName)) {
+            return Request(
+                cloud = null,
+                fileName = fileName,
+                file = file,
+                signature = null,
+                accelerator = null,
+            )
+        }
 
-        val loaded = if (EmbeddingModelRules.isLitert(fileName)) {
-            loadLitert(fileName, file)
+        val entry = litertEntryFor(fileName) ?: return null
+        // The user's override wins, but only if it is one the file could plausibly ship: the engine
+        // rejects a signature the file does not have, and a typo in a preference is not worth a
+        // failed load.
+        val signature = configuredSignature()
+            ?.takeIf { it in LitertEmbeddingCatalog.SIGNATURES }
+            ?: entry.signature
+        // GPU by default for a model that embeds images - the vision tower is the half that gains -
+        // and either way an explicit choice from the user wins over that default.
+        val accelerator = if (EmbeddingAcceleratorRules.useGpu(configuredGpu(), entry.vision)) {
+            LitertEmbedBackend.GPU
         } else {
-            loadLlamaCpp(fileName, file)
-        } ?: return@withLock null
-        active = loaded
-        loaded
+            LitertEmbedBackend.CPU
+        }
+        return Request(
+            cloud = null,
+            fileName = fileName,
+            file = file,
+            signature = signature,
+            accelerator = accelerator,
+        )
     }
 
     /**
@@ -237,17 +339,15 @@ class EmbeddingService(
      * therefore refused rather than guessed at - a wrong window fails loudly, but a missing prefix
      * only ranks worse, which is exactly the kind of damage nothing downstream can detect.
      */
-    private suspend fun loadLitert(fileName: String, file: File): ActiveModel? {
-        val entry = litertEntryFor(fileName) ?: return null
-        // The user's override wins, but only if it is one the file could plausibly ship: the engine
-        // rejects a signature the file does not have, and a typo in a preference is not worth a
-        // failed load.
-        val signature = configuredSignature()
-            ?.takeIf { it in LitertEmbeddingCatalog.SIGNATURES }
-            ?: entry.signature
-        val info = litert.load(file.absolutePath, signature)
+    private suspend fun loadLitert(request: Request): ActiveModel? {
+        val entry = litertEntryFor(request.fileName) ?: return null
+        val info = litert.load(
+            path = request.file!!.absolutePath,
+            signature = request.signature!!,
+            backend = request.accelerator!!,
+        )
         return ActiveModel(
-            fileName = fileName,
+            fileName = request.fileName,
             dim = info.dim,
             // The loaded signature, not the model's headline context: see the catalogue.
             contextTokens = info.signature,
@@ -261,11 +361,11 @@ class EmbeddingService(
         )
     }
 
-    private suspend fun loadLlamaCpp(fileName: String, file: File): ActiveModel {
-        val info = embedder.load(file.absolutePath)
-        val entry = entryFor(fileName)
+    private suspend fun loadLlamaCpp(request: Request): ActiveModel {
+        val info = embedder.load(request.file!!.absolutePath)
+        val entry = entryFor(request.fileName)
         return ActiveModel(
-            fileName = fileName,
+            fileName = request.fileName,
             dim = info.dim,
             // The model's own window, not the one we asked the context for: a small BERT is
             // trained on 512 tokens and the runtime clamps to that, so sizing inputs by anything
@@ -369,10 +469,16 @@ class EmbeddingService(
      * megabytes of idle weights through a phone's whole idle period is exactly the kind of thing
      * that makes a background feature feel expensive.
      */
-    suspend fun release() = onWorker { releaseLocked() }
+    suspend fun release() = onWorker { lock.withLock { releaseHoldingLock() } }
 
-    /** The body of [release]; reachable only through [onWorker]. */
-    private suspend fun releaseLocked() = lock.withLock {
+    /**
+     * The body of [release]; the caller must already hold [lock].
+     *
+     * Split out because [loadLocked] replaces the resident model while it holds the lock, and
+     * `Mutex` is not reentrant - calling the locking [release] from in there deadlocks instead of
+     * failing, which is exactly how this was found.
+     */
+    private suspend fun releaseHoldingLock() {
         val current = active
         if (current != null) {
             // Nothing is held for a cloud model: what it costs is the request, not a resident copy
@@ -380,7 +486,8 @@ class EmbeddingService(
             if (!current.isCloud) {
                 if (current.litert) litert.unload() else embedder.unload()
             }
-            active = null
         }
+        active = null
+        activeKey = null
     }
 }

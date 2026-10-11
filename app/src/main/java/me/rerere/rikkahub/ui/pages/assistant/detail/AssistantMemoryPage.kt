@@ -55,6 +55,7 @@ import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.data.vector.CloudEmbeddingModels
 import me.rerere.rikkahub.data.vector.CloudEmbeddingRules
+import me.rerere.rikkahub.data.vector.EmbeddingAcceleratorRules
 import me.rerere.rikkahub.data.vector.EmbeddingReadiness
 import me.rerere.rikkahub.data.vector.EmbeddingCatalog
 import me.rerere.rikkahub.data.vector.EmbeddingModelRules
@@ -204,17 +205,21 @@ private fun AssistantMemoryContent(
     // rows and the picker dialog both branch on it, and only one of them used to declare it.
     val cloudSelected = CloudEmbeddingRules.isCloud(settings.embeddingBackend)
 
+    // The file the embedding rows are about: the user's choice when it is actually installed,
+    // otherwise the first installed curated model. Null when nothing resolves - a cloud backend, or
+    // nothing installed yet.
+    val embeddingResolvedFile = EmbeddingModelRules.pick(
+        configured = settings.embeddingModelFile.takeIf { it.isNotBlank() },
+        installed = embeddingInstalled,
+        curatedOrder = EmbeddingCatalog.curatedOrder,
+    )
+
     // What the resolved model is, in one line. Presentation, so it is built here and not in
     // EmbeddingReadiness: the entries carry the numbers, the screen decides how to say them.
     // Null when nothing curated resolves - a cloud model, or a GGUF installed by hand.
     val embeddingModelFacts: String? = run {
         if (cloudSelected) return@run null
-        val file = EmbeddingModelRules.pick(
-            configured = settings.embeddingModelFile.takeIf { it.isNotBlank() },
-            installed = embeddingInstalled,
-            curatedOrder = EmbeddingCatalog.curatedOrder,
-        )
-        val entry = file?.let { LitertEmbeddingCatalog.entryFor(it) } ?: return@run null
+        val entry = embeddingResolvedFile?.let { LitertEmbeddingCatalog.entryFor(it) } ?: return@run null
         // The window that will actually be loaded, which is the override when there is one.
         val window = settings.embeddingSignature.takeIf { it > 0 } ?: entry.signature
         stringResource(
@@ -227,6 +232,15 @@ private fun AssistantMemoryContent(
             window,
         )
     }
+
+    // What the GPU switch *shows*, which is not always what it stores: an unanswered switch follows
+    // the model (the GPU is where the vision tower gains), so the row has to display the resolved
+    // value - and a user who turns it off is then making a real choice rather than repeating a
+    // default they never saw.
+    val embeddingGpuInEffect = EmbeddingAcceleratorRules.useGpu(
+        explicit = settings.embeddingUseGpu,
+        embedsImages = EmbeddingAcceleratorRules.selectedModelEmbedsImages(embeddingResolvedFile),
+    )
 
     if (showTimeReminderIntervalDialog) {
         val interval = timeReminderIntervalInput.toIntOrNull()?.takeIf { it > 0 }
@@ -739,7 +753,7 @@ private fun AssistantMemoryContent(
                 headlineContent = { Text(stringResource(R.string.assistant_page_embedding_gpu)) },
                 supportingContent = {
                     Text(
-                        if (settings.embeddingUseGpu) {
+                        if (embeddingGpuInEffect) {
                             stringResource(R.string.assistant_page_embedding_gpu_on)
                         } else {
                             stringResource(R.string.assistant_page_embedding_gpu_off)
@@ -748,7 +762,7 @@ private fun AssistantMemoryContent(
                 },
                 trailingContent = {
                     Switch(
-                        checked = settings.embeddingUseGpu,
+                        checked = embeddingGpuInEffect,
                         // Only a local model can use the device's GPU; a provider's endpoint has its
                         // own hardware, and there is nothing here to switch.
                         enabled = !cloudSelected,

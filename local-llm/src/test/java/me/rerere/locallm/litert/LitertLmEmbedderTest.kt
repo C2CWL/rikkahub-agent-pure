@@ -88,12 +88,11 @@ class LitertLmEmbedderTest {
         val native = FakeNative()
         val embedder = LitertLmEmbedder(
             native = native,
-            backend = { LitertEmbedBackend.GPU },
             nativeLibraryDir = { "/data/lib" },
             cacheDir = { "/data/cache" },
         )
 
-        embedder.load("/models/a.litertlm", signature = 2048)
+        embedder.load("/models/a.litertlm", signature = 2048, backend = LitertEmbedBackend.GPU)
 
         assertEquals(2048, native.lastSignature)
         assertEquals(LitertEmbedBackend.GPU, native.lastBackend)
@@ -102,12 +101,30 @@ class LitertLmEmbedderTest {
     @Test
     fun `load reports the accelerator the engine came up on`() = runBlocking {
         // The name goes into the identity of every vector this model produces, so it has to come
-        // from the engine that opened rather than from the setting that asked for it.
-        val gpu = LitertLmEmbedder(native = FakeNative(), backend = { LitertEmbedBackend.GPU })
-        assertEquals("gpu", gpu.load("/models/a.litertlm", signature = 512).accelerator)
+        // from the open call that ran rather than from anything the caller remembers.
+        val embedder = LitertLmEmbedder(native = FakeNative())
+        assertEquals("cpu", embedder.load("/models/a.litertlm", signature = 512).accelerator)
 
-        val cpu = LitertLmEmbedder(native = FakeNative(), backend = { LitertEmbedBackend.CPU })
-        assertEquals("cpu", cpu.load("/models/a.litertlm", signature = 512).accelerator)
+        val gpu = LitertLmEmbedder(native = FakeNative())
+        assertEquals(
+            "gpu",
+            gpu.load("/models/a.litertlm", signature = 512, backend = LitertEmbedBackend.GPU)
+                .accelerator,
+        )
+    }
+
+    @Test
+    fun `switching the accelerator on the same file reopens the engine`() = runBlocking {
+        // The two accelerators do not produce the same vectors, so a load that kept the CPU engine
+        // while the caller asked for the GPU would hand back vectors under the wrong identity.
+        val native = FakeNative()
+        val embedder = LitertLmEmbedder(native = native)
+
+        embedder.load("/models/a.litertlm", signature = 512)
+        embedder.load("/models/a.litertlm", signature = 512, backend = LitertEmbedBackend.GPU)
+
+        assertEquals(listOf("/models/a.litertlm", "/models/a.litertlm"), native.opened)
+        assertEquals(LitertEmbedBackend.GPU, native.lastBackend)
     }
 
     @Test

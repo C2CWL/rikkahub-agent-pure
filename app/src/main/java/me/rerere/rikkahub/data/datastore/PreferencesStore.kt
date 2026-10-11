@@ -342,7 +342,12 @@ class SettingsStore(
                 preferences[LIBRARY_IMAGE_SUMMARY] = settings.libraryImageSummary
                 preferences[LIBRARY_IMAGE_PROMPT] = settings.libraryImagePrompt
                 preferences[EMBEDDING_NATIVE_IMAGES] = settings.embeddingNativeImages
-                preferences[EMBEDDING_USE_GPU] = settings.embeddingUseGpu
+                // Tri-state: absent means "not chosen", which is what lets the default follow the
+                // model. `remove` rather than writing a value, so "never touched" survives a
+                // restart - the whole point of a default that is not a constant.
+                settings.embeddingUseGpu
+                    ?.let { preferences[EMBEDDING_USE_GPU] = it }
+                    ?: preferences.remove(EMBEDDING_USE_GPU)
                 preferences[EMBEDDING_SIGNATURE] = settings.embeddingSignature
                 preferences[COMPRESS_MODEL] = settings.compressModelId.toString()
                 preferences[COMPRESS_PROMPT] = settings.compressPrompt
@@ -465,7 +470,7 @@ class SettingsStore(
                 embeddingCloudModel = preferences[EMBEDDING_CLOUD_MODEL] ?: "",
                 libraryImageSummary = preferences[LIBRARY_IMAGE_SUMMARY] ?: false,
                 embeddingNativeImages = preferences[EMBEDDING_NATIVE_IMAGES] ?: true,
-                embeddingUseGpu = preferences[EMBEDDING_USE_GPU] ?: false,
+                embeddingUseGpu = preferences[EMBEDDING_USE_GPU],
                 embeddingSignature = preferences[EMBEDDING_SIGNATURE] ?: 0,
                 libraryImagePrompt = preferences[LIBRARY_IMAGE_PROMPT] ?: DEFAULT_LIBRARY_IMAGE_PROMPT,
                 compressModelId = preferences[COMPRESS_MODEL]?.let { runCatching { Uuid.parse(it) }.getOrNull() } ?: DEFAULT_AUTO_MODEL_ID,
@@ -1147,22 +1152,20 @@ data class Settings(
      */
     val embeddingNativeImages: Boolean = true,
     /**
-     * Whether the local embedding model runs on the GPU.
+     * Whether the local embedding model runs on the GPU, or null when the user has not chosen.
      *
-     * Off by default, and deliberately not a per-device guess: it is **not** the same function as
-     * the CPU - the same sentence comes back with cosine 0.9997 between the two - so an index built
-     * on one accelerator is very slightly wrong for the other, in a way nothing downstream can
-     * detect. One accelerator per index is the rule, and the accelerator is part of
-     * `EmbeddingService.ActiveModel.modelId`, so flipping this makes every stored chunk stale and
-     * the next round rebuilds instead of mixing.
+     * Null is a real value, not "off". It means the default applies, and the default depends on the
+     * model: a `.litertlm` that embeds images gets the GPU - the vision tower is the half that gains
+     * (an image costs ~2.1 s against ~60 ms for a text) - while a text-only model gets the CPU,
+     * where the measurement says the GPU is not faster anyway (~57 ms against ~63 ms) and a switch
+     * would only cost a rebuild.
      *
-     * Not a speed claim either way, because the measurements do not support one: for a *text* the
-     * two are within noise on this hardware (~57 ms on the CPU against ~63 ms on the GPU, i.e. the
-     * GPU loses the per-call overhead). The half where the GPU should win is the vision tower - an
-     * image costs ~2.1 s against ~60 ms for a text - and that one is still pinned to the CPU; see
-     * the note on `visionBackend` in `LitertLmEmbedder`.
+     * The rebuild is the price either way, because the two accelerators do not compute the same
+     * function (cosine 0.9997 on the same sentence), so one index must come from one of them. That
+     * is enforced by the accelerator being part of `EmbeddingService.ActiveModel.modelId`: flipping
+     * this makes every stored chunk stale, so the next round rebuilds instead of mixing.
      */
-    val embeddingUseGpu: Boolean = false,
+    val embeddingUseGpu: Boolean? = null,
     /**
      * Which of the model's input signatures to load, or 0 for the catalogue's choice.
      *

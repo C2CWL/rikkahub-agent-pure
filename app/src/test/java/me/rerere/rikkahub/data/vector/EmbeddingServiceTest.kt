@@ -29,10 +29,16 @@ class EmbeddingServiceTest {
     private class RecordingNative(private val dim: Int) : LlamaCppEmbedNative {
         val embedded = mutableListOf<String>()
 
+        /** Every model path the embedder was asked to open, so a reload is observable. */
+        val loaded = mutableListOf<String>()
+
         /** The thread each [embed] call ran on; the main-thread test at the bottom reads this. */
         val threads = mutableListOf<Thread>()
 
-        override fun loadModel(path: String): Long = MODEL
+        override fun loadModel(path: String): Long {
+            loaded += path
+            return MODEL
+        }
         override fun freeModel(handle: Long) = Unit
         override fun modelInfo(handle: Long): String = """{"weights_bytes":1000}"""
         override fun createEmbedContext(modelHandle: Long, nCtx: Int, nThreads: Int): Long = ENGINE
@@ -283,6 +289,43 @@ class EmbeddingServiceTest {
         // built before this existed must not be invalidated by it.
         val gguf = EmbeddingService.ActiveModel(fileName = "a.gguf", dim = 768, contextTokens = 8192)
         assertEquals("a.gguf", gguf.modelId)
+    }
+
+    /**
+     * What the engine is loaded *from* is re-answered on every [EmbeddingService.ensureLoaded].
+     *
+     * The failure this guards is silent in the worst way. `loadLocked` used to return the resident
+     * model without re-reading anything, so a model picked in the picker, a GPU switch flipped or
+     * the cloud backend turned on took effect at the next *launch* rather than the next round of
+     * indexing - and in the meantime the index was rebuilt with the old engine while its rows were
+     * stamped with the new identity. Changing the configured file between two calls is the cheapest
+     * way to see whether the second call actually re-opens.
+     */
+    @Test
+    fun `a model chosen after the engine is loaded replaces it`() = runBlocking {
+        val native = RecordingNative(DIM)
+        val dir = temp.newFolder("llamacpp")
+        val first = "first-q8_0.gguf"
+        val second = "second-q8_0.gguf"
+        File(dir, first).writeText("not really a gguf")
+        File(dir, second).writeText("not really a gguf")
+        var configured: String? = first
+
+        val service = EmbeddingService(
+            modelDirs = { listOf(dir) },
+            configuredFileName = { configured },
+            embedder = LlamaCppEmbedder(native),
+            curatedOrder = listOf(first, second),
+        )
+
+        service.embedDocuments(listOf("alpha"))
+        configured = second
+        service.embedDocuments(listOf("beta"))
+
+        assertEquals(
+            listOf(first, second),
+            native.loaded.map { it.substringAfterLast('/') },
+        )
     }
 
     private companion object {

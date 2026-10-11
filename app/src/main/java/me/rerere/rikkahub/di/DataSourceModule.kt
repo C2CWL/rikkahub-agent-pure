@@ -102,20 +102,16 @@ val dataSourceModule = module {
             // vector), and an index has to be built with one accelerator throughout or the same
             // text would score slightly differently depending on when it was indexed.
             litert = me.rerere.locallm.litert.LitertLmEmbedder(
-                // Read per load, so flipping the switch takes effect on the next round of indexing
-                // rather than the next launch.
-                backend = {
-                    if (settings.settingsFlow.value.embeddingUseGpu) {
-                        me.rerere.locallm.litert.LitertEmbedBackend.GPU
-                    } else {
-                        me.rerere.locallm.litert.LitertEmbedBackend.CPU
-                    }
-                },
                 nativeLibraryDir = { appContext.applicationInfo.nativeLibraryDir },
                 cacheDir = {
                     java.io.File(appContext.cacheDir, "litert-embed").apply { mkdirs() }.absolutePath
                 },
             ),
+            // Read per load, so a switch takes effect on the next round of indexing rather than the
+            // next launch. Null is the honest default: the user has not chosen, and what to do then
+            // depends on the model - GPU for one that embeds images, CPU otherwise. See
+            // EmbeddingAcceleratorRules.
+            configuredGpu = { settings.settingsFlow.value.embeddingUseGpu },
             // 0 means "whatever the catalogue curates"; anything else is the user's window.
             configuredSignature = {
                 settings.settingsFlow.value.embeddingSignature.takeIf { it > 0 }
