@@ -137,7 +137,9 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
             optimization {
-                enable = true
+                // SPIKE (feat/moxw-mediapipe): OFF for this branch only -- R8 renames the
+                // classes MediaPipe resolves from native code by name. Never merged.
+                enable = false
             }
         }
         debug {
@@ -280,6 +282,11 @@ dependencies {
     implementation(libs.haze.blur.material3)
     implementation(libs.haze.glass)
     implementation(libs.haze.glass.material3)
+
+    // SPIKE (feat/moxw-mediapipe): MediaPipe's supported on-device embedding task. It wraps
+    // LiteRT-LM's EmbeddingEngine and pulls litertlm-android 0.17.0-alpha1 (the app pins
+    // 0.13.1, whose Capabilities constructor is unchanged in 0.17.0-alpha1).
+    implementation("com.google.mediapipe:tasks-retrieval:1.1.0")
 
     // koin
     implementation(platform(libs.koin.bom))

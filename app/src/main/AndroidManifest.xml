@@ -153,6 +153,25 @@
     android:usesCleartextTraffic="true"
     tools:targetApi="37">
     <!--
+      SPIKE (feat/moxw-mediapipe): required for the GPU delegate. LiteRT-LM's Android guide
+      says the app must request these two native libraries explicitly ("On Android, to use the
+      GPU backend, the app needs to request the depending native libraries ... inside the
+      <application> tag"). Our own LiteRtRuntime comments already blame a blocked
+      libvndksupport.so for OpenCL discovery failing on Adreno + OEM ROMs (upstream #2292),
+      yet the app has never declared either. Since Android 12 vendor libs are hidden from apps
+      unless declared here; must sit under <application>.
+    -->
+    <uses-native-library
+        android:name="libvndksupport.so"
+        android:required="false" />
+    <uses-native-library
+        android:name="libOpenCL.so"
+        android:required="false" />
+    <uses-native-library
+        android:name="libcdsprpc.so"
+        android:required="false" />
+
+    <!--
       Game Mode preferences. Declares to the OEM Game Mode framework (Pixel, Samsung,
       Asus, Nothing, Xiaomi, etc.) that this app accepts PERFORMANCE and BATTERY mode
       treatment. Local LLM inference is a heavy compute workload that benefits from

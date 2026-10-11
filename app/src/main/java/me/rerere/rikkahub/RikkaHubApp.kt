@@ -110,6 +110,16 @@ class RikkaHubApp : Application() {
         // Init QuickJS native library
         QuickJSLoader.init()
 
+        // SPIKE (feat/moxw-mediapipe): one-shot, file-triggered MediaPipe Universal Embedder
+        // probe -- see MediaPipeProbe. Never merged unless the spike pays off.
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            me.rerere.rikkahub.mpprobe.MediaPipeProbe.runIfRequested(
+                context = this@RikkaHubApp,
+                appFilesDir = filesDir,
+                appExternalFilesDir = getExternalFilesDir(null),
+            )
+        }
+
         // delete temp files
         deleteTempFiles()
 
