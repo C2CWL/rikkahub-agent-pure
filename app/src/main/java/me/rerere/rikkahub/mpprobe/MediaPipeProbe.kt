@@ -132,8 +132,13 @@ object MediaPipeProbe {
         }
 
         // ---- arm 1: MediaPipe Universal Embedder (the documented, supported wrapper) ----
-        // CPU first (the safe baseline), then NPU, then GPU -- GPU is last on purpose: the
-        // LiteRT 0.14+ GPU path is the one that spun this Adreno 830 at 100% CPU.
+        // KNOWN BROKEN as of tasks-retrieval 1.1.0: it declares litertlm-android
+        // 0.17.0-alpha1, yet its own code references com.google.ai.edge.litertlm.
+        // ActivationDataType, which only exists in litertlm 0.18.0 (verified by unzipping
+        // 0.17.0-alpha1 / 0.17.0 / 0.17.1 / 0.18.0: only 0.18.0 has the class). So every
+        // delegate fails with NoClassDefFoundError before any measurement happens. Making it
+        // work means forcing litertlm 0.18.0 -- which removes `Capabilities`, the class our
+        // LiteRtRuntime uses. Kept here so the failure is recorded rather than assumed.
         for (delegate in listOf(Delegate.CPU, Delegate.NPU, Delegate.GPU)) {
             say("--- mp: delegate=$delegate ---")
             var embedder: UniversalEmbedder? = null
@@ -184,6 +189,11 @@ object MediaPipeProbe {
                     modelPath = model.absolutePath,
                     backend = backend,
                     cacheDir = cacheDir.absolutePath,
+                    // The .litertlm is a MULTI-SIGNATURE model: without this the engine loads
+                    // the largest signature and the compiled-model tensor allocation fails
+                    // ("Failed to allocate tensors", seen on both CPU and NPU). MediaPipe's
+                    // own option list has the same knob for the same reason.
+                    maxInputLength = 128,
                 )
                 val t0 = System.currentTimeMillis()
                 engine = EmbeddingEngine(cfg)
