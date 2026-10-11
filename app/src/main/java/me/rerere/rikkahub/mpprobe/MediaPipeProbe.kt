@@ -31,6 +31,7 @@ import java.util.Date
  * ```
  * mp-probe-request        line 1: absolute path of a .litertlm model
  *                         line 2: optional text to embed
+ *                         line 3: optional image to embed (drives arm 3's cross-modal check)
  * mp-probe-result.txt     appended to as the probe progresses, in the same directory
  * ```
  *
@@ -42,6 +43,9 @@ object MediaPipeProbe {
     const val REQUEST_FILE = "mp-probe-request"
     const val RESULT_FILE = "mp-probe-result.txt"
     private const val DEFAULT_TEXT = "a yellow piece of fruit"
+
+    /** Which of the model's input signatures to load (it ships 128/256/512/1024/2048/8192). */
+    private const val DEFAULT_SIGNATURE = 128
 
     fun runIfRequested(
         context: Context,
@@ -68,6 +72,7 @@ object MediaPipeProbe {
         }
         val modelPath = lines.getOrNull(0)?.trim().orEmpty()
         val text = lines.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() } ?: DEFAULT_TEXT
+        val signature = lines.getOrNull(3)?.trim()?.toIntOrNull() ?: DEFAULT_SIGNATURE
 
         say("=== MediaPipeProbe ===")
         say("at            = ${Date()}")
@@ -213,6 +218,92 @@ object MediaPipeProbe {
             } finally {
                 runCatching { engine?.close() }
             }
+        }
+
+        // ---- arm 3: is the vector MEANINGFUL, not merely deterministic? ----
+        // Repeats agreeing with each other (cos == 1.000000) only proves the pipeline is stable.
+        // What decides whether this can replace the llama.cpp path is whether the space is
+        // *semantic*: "a yellow piece of fruit" must sit nearer "a ripe banana" than
+        // "an automobile engine". And since the whole reason to switch is multimodal, an image
+        // has to land near the text that describes it.
+        fun cos(a: FloatArray, b: FloatArray): Double {
+            var dot = 0.0
+            var na = 0.0
+            var nb = 0.0
+            for (k in a.indices) {
+                dot += a[k].toDouble() * b[k].toDouble()
+                na += a[k].toDouble() * a[k].toDouble()
+                nb += b[k].toDouble() * b[k].toDouble()
+            }
+            return if (na > 0 && nb > 0) dot / kotlin.math.sqrt(na * nb) else Double.NaN
+        }
+
+        say("--- semantics: CPU, no task prefix, cosine matrix ---")
+        var semEngine: EmbeddingEngine? = null
+        try {
+            semEngine = EmbeddingEngine(
+                EmbeddingEngineConfig(
+                    modelPath = model.absolutePath,
+                    backend = Backend.CPU(),
+                    visionBackend = Backend.CPU(),
+                    cacheDir = cacheDir.absolutePath,
+                    // Signature to load. The model ships 128 / 256 / 512 / 1024 / 2048 / 8192 and
+                    // this picks one; it decides both the arena and the longest text the engine
+                    // will accept (it refuses rather than truncating). Read from request line 4 so
+                    // one build can be re-run at several widths.
+                    maxInputLength = signature,
+                )
+            ).also { it.initialize() }
+
+            val probes = listOf(
+                "a yellow piece of fruit",
+                "a ripe banana",
+                "an automobile engine",
+                "the Eiffel Tower in Paris",
+            )
+            val vectors = probes.map { p ->
+                val t = System.currentTimeMillis()
+                val v = semEngine.computeEmbedding(
+                    listOf(InputData.Text(p)),
+                    EmbeddingOptions(normalize = true),
+                ).embedding
+                say("  text  ${v.size}d  ${System.currentTimeMillis() - t} ms  [$p]")
+                v
+            }
+            say("  cosine matrix, row i vs column j:")
+            say("         " + probes.indices.joinToString("") { "%9d".format(it) })
+            probes.indices.forEach { i ->
+                say("    [" + i + "]  " + probes.indices.joinToString("") { j ->
+                    "%9.4f".format(cos(vectors[i], vectors[j]))
+                })
+            }
+
+            val imagePath = lines?.getOrNull(2)?.trim().orEmpty()
+            if (imagePath.isEmpty()) {
+                say("  (no image path on request line 3 -- image arm skipped)")
+            } else {
+                val image = File(imagePath)
+                if (!image.isFile) {
+                    say("  image NOT FOUND: $imagePath")
+                } else {
+                    val bytes = image.readBytes()
+                    val t = System.currentTimeMillis()
+                    val iv = semEngine.computeEmbedding(
+                        listOf(InputData.Image(bytes)),
+                        EmbeddingOptions(normalize = true),
+                    ).embedding
+                    say("  image  ${image.name}  ${bytes.size} B  ${iv.size}d  " +
+                        "${System.currentTimeMillis() - t} ms")
+                    probes.forEachIndexed { i, p ->
+                        say("    cos(image, [" + i + "] " + p + ") = " +
+                            "%.4f".format(cos(iv, vectors[i])))
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            say("  FAILED: ${t.javaClass.name}: ${t.message?.take(600)}")
+        } finally {
+            runCatching { semEngine?.close() }
         }
         say("=== done ===")
     }
