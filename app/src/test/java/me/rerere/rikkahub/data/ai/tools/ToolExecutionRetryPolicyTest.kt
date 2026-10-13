@@ -74,7 +74,7 @@ class ToolExecutionRetryPolicyTest {
             "unzip_file", "open_file", "share", "show_image",
             "workspace_shell", "workspace_write_file", "workspace_edit_file",
             "workspace_run_background", "workspace_background_kill", "workspace_create_folder",
-            "memory_tool", "clipboard_tool", "compact_context", "use_skill", "tool_open",
+            "memory_tool", "clipboard_tool", "compact_context", "use_skill", "tool_open", "tool_close",
             "notification_reply", "notification_action_click", "dismiss_notification",
             "post_notification", "telegram_send_message", "telegram_send_photo",
             "telegram_set_token", "record_audio", "speech_to_text", "take_photo",

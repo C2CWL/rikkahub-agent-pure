@@ -2131,6 +2131,11 @@ class ChatService(
                         // is callable on its very next step. Cost per step: a catalogue lookup and
                         // a set difference — no embedding (the ranking is frozen above), no MCP
                         // round trip, no new Tool objects.
+                        // Asymmetric on purpose: a name released with `tool_close` cannot be
+                        // un-sent from this turn's snapshot (it is already in the list), so it
+                        // keeps working until the turn ends and is gone from the next turn's
+                        // surface. Freeing the slot is immediate either way, which is the part
+                        // that matters — it is what lets a full budget open something new.
                         val frozenNames = attachedTools.toSet()
                         liveCatalogueTools = {
                             val openedNow = activation.active().toList()
@@ -2148,10 +2153,11 @@ class ChatService(
                                 budget = ToolRankFusion.DEFAULT_TURN_SKILL_BUDGET,
                                 isOfSource = { isSkill(it) },
                             )
-                            // A skill opened mid-turn has to reach `use_skill`'s listing too.
-                            // The listing reads this lazily, and adding activated names can only
-                            // grow the set (they bypass the guess budget), so this is monotone —
-                            // it never loses what the snapshot had.
+                            // A skill opened or released mid-turn has to reach `use_skill`'s
+                            // listing too. A full recompute from the live activation set, not a
+                            // merge, so a name released with `tool_close` leaves the listing
+                            // exactly as an opened one joins it; the listing reads it lazily,
+                            // before the next request goes out.
                             visibleSkillNames = skillsNow.toSet()
                             // The same floor and allow-list the frozen half went through: a late
                             // activation must not widen a sub-agent run's surface.
