@@ -2987,16 +2987,19 @@
   <!-- Getting started (first-run guide) -->
   <string name="getting_started_title">Getting started</string>
   <string name="getting_started_intro_title">Before your first chat</string>
-  <string name="getting_started_intro_desc">The app ships with nothing configured: no model, tools off, no permissions. Do these four things and it becomes the agent you installed it for.</string>
-  <string name="getting_started_progress">Done %1$d of %2$d</string>
-  <string name="getting_started_step_model_title">Add a model</string>
-  <string name="getting_started_step_model_desc">Open a provider and paste an API key (OpenRouter, or any OpenAI-compatible endpoint). Without a model the chat cannot reply.</string>
-  <string name="getting_started_step_tools_title">Turn on tools</string>
-  <string name="getting_started_step_tools_desc">Tools are all off by default, so out of the box it behaves like a plain chat app. Pick the groups you want your assistant to use.</string>
+  <string name="getting_started_intro_desc">Moxw needs two things before it works: a chat model to reply, and an on-device embedding model that memory, file search, past-chat search and the tool catalogue all run on. Set those up, then add the optional extras.</string>
+  <string name="getting_started_progress">Required %1$d of %2$d</string>
+  <string name="getting_started_optional">Optional</string>
+  <string name="getting_started_step_model_title">Add a chat model</string>
+  <string name="getting_started_step_model_desc">Open a provider and paste an API key (OpenRouter, or any OpenAI-compatible endpoint). Without a chat model nothing can reply.</string>
+  <string name="getting_started_step_embedding_title">Install the embedding model</string>
+  <string name="getting_started_step_embedding_desc">Every search in Moxw — memory, files, past chats and the tool catalogue — runs on the on-device embedding model. Without it the assistant has no tools and remembers nothing, so pick one small model to start.</string>
+  <string name="getting_started_step_tools_title">Switch on extra capabilities</string>
+  <string name="getting_started_step_tools_desc">The tool catalogue is always on and chosen by meaning, so there is nothing to turn on for it. Here you enable the system-level ones that need something only you can provide: screen control, Shizuku, Termux and the like.</string>
   <string name="getting_started_step_permissions_title">Grant permissions</string>
   <string name="getting_started_step_permissions_desc">Accessibility lets the agent see and tap the screen; notification access lets it read notifications. Everything else can wait until a tool needs it.</string>
   <string name="getting_started_step_workspace_title">Bind a workspace</string>
-  <string name="getting_started_step_workspace_desc">A workspace gives the agent a home for files and cold memory. Optional, but required for anything file-related.</string>
+  <string name="getting_started_step_workspace_desc">A workspace gives the agent a home for files, the file library and cold memory. Optional, but required for anything file-related.</string>
   <string name="getting_started_go">Open</string>
   <string name="getting_started_done">Done</string>
   <string name="getting_started_finish">Start using</string>
