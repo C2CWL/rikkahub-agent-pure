@@ -2702,16 +2702,19 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <!-- 快速上手（首次运行引导） -->
   <string name="getting_started_title">快速上手</string>
   <string name="getting_started_intro_title">开始聊天之前</string>
-  <string name="getting_started_intro_desc">App 装好后是「空」的：没有模型、工具全关、权限未给。做完下面四件事，它才会变成你想要的 Agent。</string>
-  <string name="getting_started_progress">已完成 %1$d/%2$d</string>
-  <string name="getting_started_step_model_title">添加模型</string>
-  <string name="getting_started_step_model_desc">进入「模型提供商」，选一个并填入 API Key（OpenRouter，或任何 OpenAI 兼容接口）。没有模型，对话发不出去。</string>
-  <string name="getting_started_step_tools_title">开启工具</string>
-  <string name="getting_started_step_tools_desc">工具默认全部关闭，不开就只是一个普通聊天 App。按需要勾选你想让助手使用的工具分组。</string>
+  <string name="getting_started_intro_desc">Moxw 要能干活，先得备齐两件事：一个回话用的对话模型，和一个端侧向量模型——记忆、文件库、历史对话、工具检索全都跑在它上面。装好这两样，再按需开启可选能力。</string>
+  <string name="getting_started_progress">必做 %1$d/%2$d</string>
+  <string name="getting_started_optional">可选</string>
+  <string name="getting_started_step_model_title">添加对话模型</string>
+  <string name="getting_started_step_model_desc">进入「模型提供商」，选一个并填入 API Key（OpenRouter，或任何 OpenAI 兼容接口）。没有对话模型，消息发不出去。</string>
+  <string name="getting_started_step_embedding_title">安装向量模型</string>
+  <string name="getting_started_step_embedding_desc">Moxw 里的检索——记忆、文件、历史对话、工具目录——全部依赖端侧向量模型。没装它，助手既没有工具、也记不住东西；先装一个小号的即可。</string>
+  <string name="getting_started_step_tools_title">开启额外能力</string>
+  <string name="getting_started_step_tools_desc">工具目录始终开启、按语义自动挑选，不需要手动打开。这里开启的是需要你亲自提供前提的系统级能力：屏幕操控、Shizuku、Termux 等。</string>
   <string name="getting_started_step_permissions_title">授予权限</string>
   <string name="getting_started_step_permissions_desc">无障碍让 Agent 能看/点屏幕；通知访问让它读通知。其他权限等工具真正用到时再给。</string>
   <string name="getting_started_step_workspace_title">绑定工作区</string>
-  <string name="getting_started_step_workspace_desc">工作区给 Agent 一个读写文件和存放冷记忆的地方。可选；涉及文件的功能需要它。</string>
+  <string name="getting_started_step_workspace_desc">工作区给 Agent 提供一个读写文件、存放文件库与冷记忆的地方。可选；涉及文件的功能需要它。</string>
   <string name="getting_started_go">去设置</string>
   <string name="getting_started_done">已完成</string>
   <string name="getting_started_finish">开始使用</string>

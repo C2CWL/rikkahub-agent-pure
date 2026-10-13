@@ -1,7 +1,7 @@
 package me.rerere.rikkahub.ui.pages.gettingstarted
 
-import androidx.compose.foundation.background
 import android.os.Build
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,12 +34,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.ai.tools.LocalToolOption
+import me.rerere.rikkahub.data.ai.tools.LocalToolGates
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.permissions.PermissionInventory
 import me.rerere.rikkahub.data.permissions.isAggressive
 import me.rerere.rikkahub.data.permissions.keepAliveVendorOf
+import me.rerere.rikkahub.data.vector.EmbeddingModelFiles
+import me.rerere.rikkahub.data.vector.EmbeddingReadiness
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.hooks.writeBooleanPreference
@@ -49,7 +51,20 @@ import me.rerere.rikkahub.utils.plus
 /** Preference key: once the user has seen (or dismissed) the first-run guide, never show it again. */
 const val GETTING_STARTED_SEEN_KEY = "getting_started_seen"
 
-enum class GettingStartedStep { Model, Tools, Permissions, Workspace }
+enum class GettingStartedStep { Model, Embedding, Tools, Permissions, Workspace }
+
+/**
+ * The steps without which the app cannot do its job at all. Everything else only *adds*
+ * capability, so the guide tracks progress against these two rather than treating all five
+ * as equally required — on Moxw a user with both models configured already has a working
+ * agent, and a "done 2 of 5" that never resolves reads as a failure.
+ *
+ * Moxw-specific: [GettingStartedStep.Embedding] is the piece the stock line does not have.
+ * Retrieval in this product runs through the on-device embedding model, so a chat model
+ * alone buys a plain chat app — no tools, no memory.
+ */
+val REQUIRED_GETTING_STARTED_STEPS: Set<GettingStartedStep> =
+    setOf(GettingStartedStep.Model, GettingStartedStep.Embedding)
 
 /**
  * A model is "configured" when at least one enabled provider carries at least one model.
@@ -61,13 +76,25 @@ fun Settings.hasConfiguredModel(): Boolean =
 
 /**
  * Pure Kotlin so it can be unit-tested on the JVM — the caller supplies [deniedPermissions]
- * from [PermissionInventory] (which needs a Context). False means "still to do".
+ * from [PermissionInventory] and [embeddingReady] from [EmbeddingReadiness], both of which need
+ * a Context. False means "still to do".
+ *
+ * The tools step now asks a different question than the stock line: the catalogue is always
+ * assembled and ranked by meaning, so "did you turn tools on" is meaningless. What a user can
+ * still decide is which of the *gated* groups — the ones that need something only they can
+ * provide (Shizuku, Termux, the accessibility service, ...) — are on. [LocalToolGates.isGated]
+ * is the same predicate the tool page uses, so the checklist and the page cannot disagree.
  */
-fun evaluateGettingStartedSteps(settings: Settings, deniedPermissions: Int): Map<GettingStartedStep, Boolean> =
+fun evaluateGettingStartedSteps(
+    settings: Settings,
+    deniedPermissions: Int,
+    embeddingReady: Boolean,
+): Map<GettingStartedStep, Boolean> =
     mapOf(
         GettingStartedStep.Model to settings.hasConfiguredModel(),
+        GettingStartedStep.Embedding to embeddingReady,
         GettingStartedStep.Tools to settings.assistants.any { a ->
-            a.localTools.any { it != LocalToolOption.TimeInfo }
+            a.localTools.any { LocalToolGates.isGated(it) }
         },
         GettingStartedStep.Permissions to (deniedPermissions == 0),
         GettingStartedStep.Workspace to settings.assistants.any { it.workspaceId != null },
@@ -78,6 +105,11 @@ fun evaluateGettingStartedSteps(settings: Settings, deniedPermissions: Int): Map
  * tools and no permissions — so the single most common complaint is "I installed it and
  * don't know what to do". This page turns that dead end into an ordered, tappable checklist
  * that points at the exact setting each capability lives in.
+ *
+ * The Moxw build adds the one prerequisite the stock line does not have: an on-device
+ * embedding model, which memory, the file library, past-chat search and the tool catalogue
+ * all run on. It is listed second, right after the chat model, because without it the two
+ * required steps are not done no matter what else is set up.
  */
 @Composable
 fun GettingStartedPage() {
@@ -98,8 +130,18 @@ fun GettingStartedPage() {
         }.getOrDefault(0)
     }
 
-    val steps = evaluateGettingStartedSteps(settings, pendingServicePermissions)
-    val doneCount = steps.count { it.value }
+    // Resolved through the same rules the embedder itself uses, so this checklist cannot claim
+    // semantic search is ready while the service refuses to run — a configured file that was
+    // deleted, or a curated model installed under its repository name, land the same way here.
+    val embeddingReady = remember(settings.embeddingModelFile, settings.embeddingBackend, settings.embeddingCloudModel) {
+        runCatching {
+            EmbeddingReadiness.isReady(settings, EmbeddingModelFiles.installedFiles(ctx))
+        }.getOrDefault(false)
+    }
+
+    val steps = evaluateGettingStartedSteps(settings, pendingServicePermissions, embeddingReady)
+    val requiredTotal = REQUIRED_GETTING_STARTED_STEPS.size
+    val requiredDone = REQUIRED_GETTING_STARTED_STEPS.count { steps[it] == true }
     val assistantId = settings.getCurrentAssistant().id.toString()
     // Only aggressive OEM ROMs reap the accessibility service in the background; for everyone
     // else the tip is noise, so gate it on the vendor.
@@ -127,7 +169,7 @@ fun GettingStartedPage() {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item(key = "intro") {
-                IntroCard(done = doneCount, total = steps.size)
+                IntroCard(requiredDone = requiredDone, requiredTotal = requiredTotal)
             }
 
             item(key = "step-model") {
@@ -136,26 +178,40 @@ fun GettingStartedPage() {
                     titleRes = R.string.getting_started_step_model_title,
                     descRes = R.string.getting_started_step_model_desc,
                     done = steps[GettingStartedStep.Model] == true,
+                    optional = false,
                     onAction = { nav.navigate(Screen.SettingProvider) },
+                )
+            }
+
+            item(key = "step-embedding") {
+                StepCard(
+                    index = 2,
+                    titleRes = R.string.getting_started_step_embedding_title,
+                    descRes = R.string.getting_started_step_embedding_desc,
+                    done = steps[GettingStartedStep.Embedding] == true,
+                    optional = false,
+                    onAction = { nav.navigate(Screen.AssistantMemory(assistantId)) },
                 )
             }
 
             item(key = "step-tools") {
                 StepCard(
-                    index = 2,
+                    index = 3,
                     titleRes = R.string.getting_started_step_tools_title,
                     descRes = R.string.getting_started_step_tools_desc,
                     done = steps[GettingStartedStep.Tools] == true,
+                    optional = true,
                     onAction = { nav.navigate(Screen.AssistantLocalTool(assistantId)) },
                 )
             }
 
             item(key = "step-permissions") {
                 StepCard(
-                    index = 3,
+                    index = 4,
                     titleRes = R.string.getting_started_step_permissions_title,
                     descRes = R.string.getting_started_step_permissions_desc,
                     done = steps[GettingStartedStep.Permissions] == true,
+                    optional = true,
                     onAction = { nav.navigate(Screen.SettingPermissions) },
                 )
             }
@@ -168,10 +224,11 @@ fun GettingStartedPage() {
 
             item(key = "step-workspace") {
                 StepCard(
-                    index = 4,
+                    index = 5,
                     titleRes = R.string.getting_started_step_workspace_title,
                     descRes = R.string.getting_started_step_workspace_desc,
                     done = steps[GettingStartedStep.Workspace] == true,
+                    optional = true,
                     onAction = { nav.navigate(Screen.AssistantBasic(assistantId)) },
                 )
             }
@@ -200,7 +257,7 @@ fun GettingStartedPage() {
 }
 
 @Composable
-private fun IntroCard(done: Int, total: Int) {
+private fun IntroCard(requiredDone: Int, requiredTotal: Int) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -220,7 +277,7 @@ private fun IntroCard(done: Int, total: Int) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            stringResource(R.string.getting_started_progress, done, total),
+            stringResource(R.string.getting_started_progress, requiredDone, requiredTotal),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -233,6 +290,7 @@ private fun StepCard(
     titleRes: Int,
     descRes: Int,
     done: Boolean,
+    optional: Boolean,
     onAction: () -> Unit,
 ) {
     Row(
@@ -267,11 +325,19 @@ private fun StepCard(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(
-                stringResource(titleRes),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    stringResource(titleRes),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (optional) {
+                    OptionalBadge()
+                }
+            }
             Text(
                 stringResource(descRes),
                 style = MaterialTheme.typography.bodySmall,
@@ -295,6 +361,22 @@ private fun StepCard(
                 )
             }
         }
+    }
+}
+
+/** A quiet chip that says a step is a "nice to have" — so an unfinished optional step reads as a choice, not a failure. */
+@Composable
+private fun OptionalBadge() {
+    Box(
+        modifier = Modifier
+            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(6.dp))
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+    ) {
+        Text(
+            stringResource(R.string.getting_started_optional),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
     }
 }
 
