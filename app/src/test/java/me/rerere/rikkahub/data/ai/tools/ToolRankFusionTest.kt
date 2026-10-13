@@ -218,6 +218,55 @@ class ToolRankFusionTest {
         assertTrue(ToolRankFusion.attachedForTurn(emptyList(), emptyList(), emptyList()).isEmpty())
     }
 
+    @Test
+    fun `an activation made after the snapshot lands on the very next pass`() {
+        // What `tool_open` buys. The turn's snapshot is taken before the model can open
+        // anything, so the tool it opens has to be re-derived from the *current* activation set
+        // on the next step — that is the whole point of re-reading this per step instead of
+        // reusing the snapshot until the user speaks again.
+        val ranked = listOf("a", "b", "c")
+        assertEquals(
+            listOf("a"),
+            ToolRankFusion.attachedForTurn(ranked = ranked, pinned = emptyList(), activated = emptyList(), budget = 1),
+        )
+        // The model opened `c`. It bypasses the guess budget, so it arrives even though the
+        // ranking never put it first.
+        assertEquals(
+            listOf("c", "a"),
+            ToolRankFusion.attachedForTurn(ranked = ranked, pinned = emptyList(), activated = listOf("c"), budget = 1),
+        )
+    }
+
+    @Test
+    fun `growing activations can only grow the attached set`() {
+        // The frozen guess plus a monotonically growing activation set: a later pass must never
+        // lose a name an earlier pass had. If it could, re-deriving per step would be a way to
+        // silently drop a tool mid-turn.
+        val ranked = listOf("a", "b", "c", "d")
+        // A real turn only ever grows this set: `activate` appends, and `retain` (which can drop
+        // names) runs once, before the snapshot. So the chain below is what the provider actually
+        // sees, step by step.
+        val passes = listOf(
+            emptyList<String>(),
+            listOf("c"),
+            listOf("c", "d"),
+            listOf("c", "d", "z"),
+        ).map { activated ->
+            ToolRankFusion.attachedForTurn(
+                ranked = ranked,
+                pinned = listOf("p"),
+                activated = activated,
+                budget = 2,
+            )
+        }
+        passes.zipWithNext { before, after ->
+            assertTrue("$after lost a name from $before", after.containsAll(before))
+        }
+        // No name the ranking never guessed is needed to see the property, but the opened ones
+        // have to arrive even when the budget is already spent by guesses.
+        assertTrue(passes.last().containsAll(listOf("p", "z", "c", "d")))
+    }
+
     // ---- embedText ------------------------------------------------------------------------
 
     @Test

@@ -1774,6 +1774,15 @@ class ChatService(
                 .lastOrNull { it.role == MessageRole.USER }
                 ?.toText()
                 .orEmpty()
+            // The catalogue surface below is a per-turn snapshot on purpose: the semantic guess
+            // must not drift halfway through a turn, and re-ranking (which embeds the user) on
+            // every step would be work for nothing. Explicit activation is a different promise —
+            // a tool the model opened with `tool_open` has to be callable right away, not on the
+            // next user turn. So the *dynamic* half of the catalogue is handed to the loop as a
+            // provider it re-reads on every step; the frozen half stays frozen. Assigned inside
+            // the `tools = buildList { … }` argument below, which Kotlin evaluates before this
+            // call — hence a `var` rather than a value.
+            var liveCatalogueTools: (suspend () -> List<Tool>)? = null
             generationLoop.generateText(
                 settings = settings,
                 model = model,
@@ -2115,11 +2124,52 @@ class ChatService(
                         attachedTools.forEach { name ->
                             catalog.entry(name)?.let { entry -> add(entry.tool) }
                         }
+                        // Live re-attachment — this is what makes `tool_open` immediate rather
+                        // than one user turn away. Everything above stays a per-turn snapshot;
+                        // this closure is re-read on every step of the turn and adds only what the
+                        // model opened *after* the snapshot was taken, so a tool it just activated
+                        // is callable on its very next step. Cost per step: a catalogue lookup and
+                        // a set difference — no embedding (the ranking is frozen above), no MCP
+                        // round trip, no new Tool objects.
+                        val frozenNames = attachedTools.toSet()
+                        liveCatalogueTools = {
+                            val openedNow = activation.active().toList()
+                            val toolsNow = ToolRankFusion.attachOfSource(
+                                ranked = ranked,
+                                pinned = pinned,
+                                activated = openedNow,
+                                budget = ToolRankFusion.DEFAULT_TURN_TOOL_BUDGET,
+                                isOfSource = { !isSkill(it) },
+                            )
+                            val skillsNow = ToolRankFusion.attachOfSource(
+                                ranked = ranked,
+                                pinned = pinned,
+                                activated = openedNow,
+                                budget = ToolRankFusion.DEFAULT_TURN_SKILL_BUDGET,
+                                isOfSource = { isSkill(it) },
+                            )
+                            // A skill opened mid-turn has to reach `use_skill`'s listing too.
+                            // The listing reads this lazily, and adding activated names can only
+                            // grow the set (they bypass the guess budget), so this is monotone —
+                            // it never loses what the snapshot had.
+                            visibleSkillNames = skillsNow.toSet()
+                            // The same floor and allow-list the frozen half went through: a late
+                            // activation must not widen a sub-agent run's surface.
+                            me.rerere.rikkahub.subagent.SubAgentSurface.apply(
+                                conversationId,
+                                toolsNow
+                                    .filterNot { name -> name in frozenNames }
+                                    .mapNotNull { name -> catalog.entry(name)?.tool },
+                            )
+                        }
                     }
                     // P3-04 — attached here, not above, so the listing it renders can already see
                     // what the catalogue decided. Empty in the ordinary case of no skills.
                     addAll(skillTools)
                 }.let { me.rerere.rikkahub.subagent.SubAgentSurface.apply(conversationId, it) },
+                // The dynamic half of the catalogue — null on any path that built no catalogue,
+                // in which case the loop gets exactly the snapshot above.
+                extraToolsProvider = { liveCatalogueTools?.invoke() ?: emptyList() },
             ).onCompletion { completionCause ->
                 // 取消 Live Update 通知
                 cancelLiveUpdateNotification(conversationId)

@@ -93,7 +93,7 @@ data class ToolOpenOutcome(
 ) {
     fun toJson(): String {
         val note = buildString {
-            append("Activated schemas become callable from your NEXT turn, not this one.")
+            append("Activated schemas are callable immediately: use them on your very next step.")
             if (activated.isEmpty()) {
                 if (unknown.isEmpty() && alreadyActive.isEmpty() && rejectedOverCap.isEmpty()) {
                     append(" No tool names were provided, so nothing was activated. Call tool_search")
@@ -227,8 +227,8 @@ class ToolActivationState {
  * The two catalogue tools that replace a full schema dump.
  *
  * Returns exactly two tools: `tool_search` (find names, no schema) and `tool_open`
- * (activate names, no schema). Real schemas surface only on the model's next turn,
- * which is what keeps the request small.
+ * (activate names, no schema). A real schema is attached only once the model has opened its
+ * name — on that same turn's very next step — which is what keeps the request small.
  */
 fun buildToolCatalogTools(
     catalog: ToolCatalog,
@@ -254,8 +254,8 @@ fun buildToolCatalogTools(
             whole sentence works as well as a tool's exact name. Skills are searched too and
             come back with the source SKILL. It returns names and
             summaries ONLY — never schemas or parameters. To actually call a tool, first
-            activate it with tool_open; activation takes effect on your NEXT turn, not the
-            current one.
+            activate it with tool_open, then call it right away: it becomes callable on your
+            very next step, still inside this same turn.
             If it reports that semantic search is unavailable, the embedding model is missing or
             still warming up. Say so to the user and stop rather than retrying with other words:
             searching again cannot fix it.
@@ -301,8 +301,9 @@ fun buildToolCatalogTools(
             Activate entries by name. A tool's schema becomes callable; a skill (source
             SKILL) becomes available to `use_skill` instead, since a skill is instructions
             rather than a schema. Names must be exact matches returned by tool_search.
-            Activation takes effect on your NEXT turn, not the current one. Do not
-            re-open an entry that is already active.
+            Activation is immediate: call the tool on your very next step, still inside this
+            same turn — never tell the user to ask again. Do not re-open an entry that is
+            already active.
         """.trimIndent(),
         parameters = {
             InputSchema.Obj(
