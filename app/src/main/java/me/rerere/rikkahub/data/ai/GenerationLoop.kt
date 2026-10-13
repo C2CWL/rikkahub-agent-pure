@@ -629,6 +629,13 @@ class GenerationLoop(
         assistant: Assistant,
         memories: List<AssistantMemory>? = null,
         tools: List<Tool> = emptyList(),
+        // Tools re-evaluated on EVERY step of the turn and appended to [tools] above. [tools] is
+        // a per-turn snapshot on purpose — the progressive catalogue's semantic guess must not
+        // drift halfway through a turn — but explicit activation must not wait for the next user
+        // turn either. ChatService therefore passes a provider here: a tool the model opened with
+        // `tool_open` is callable on its very next step, in the same turn. Default: empty, so
+        // every caller that does not pass it sends exactly the surface it sent before.
+        extraToolsProvider: suspend () -> List<Tool> = { emptyList() },
         // Read live from the runtime holder, not captured once: the default expression is
         // evaluated per call, so a settings change takes effect on the next turn.
         maxSteps: Int = ToolRuntimeLimits.maxToolSteps,
@@ -729,6 +736,9 @@ class GenerationLoop(
                     ).let(this::addAll)
                 }
                 addAll(tools)
+                // Re-read every step (see extraToolsProvider): this is how a tool the model
+                // activates mid-turn becomes callable without waiting for the next user turn.
+                addAll(extraToolsProvider())
             }
 
             // Check if we have tool calls ready to continue after user interaction.

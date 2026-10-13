@@ -229,7 +229,7 @@ class ToolCatalogTest {
     }
 
     @Test
-    fun `open outcome tells the model activation lands next turn`() {
+    fun `open outcome tells the model activation is live from the next step`() {
         val outcome = ToolOpenOutcome(
             activated = listOf("a"),
             alreadyActive = emptyList(),
@@ -237,7 +237,10 @@ class ToolCatalogTest {
             rejectedOverCap = emptyList(),
             activeCount = 1,
         )
-        assertTrue(outcome.toJson().contains("NEXT turn"))
+        // The wording used to promise the NEXT turn, which is what made an activated tool
+        // unusable until the user spoke again. It now promises the next step of the same turn.
+        assertTrue(outcome.toJson().contains("immediately"))
+        assertFalse(outcome.toJson().contains("NEXT turn"))
     }
 
     // ------------------------------------------------------------ tool wiring
