@@ -381,8 +381,7 @@ private fun ChatPageContent(
         }.orEmpty()
     }
 
-    // Model / search-provider switching moved out of the input bar and into the attachments panel
-    // (the bar's "+"), so the same handlers now feed that sheet instead.
+    // Model and search live on the input bar (model chip, search icon). The handlers stay here.
     val onUpdateSearchMode: (SearchMode) -> Unit = { mode ->
         val current = setting.getCurrentAssistant()
         val model = setting.getCurrentChatModel()
@@ -505,6 +504,10 @@ private fun ChatPageContent(
                             )
                         )
                     },
+                    enableSearch = enableWebSearch,
+                    onUpdateChatModel = onUpdateChatModel,
+                    onUpdateSearchMode = onUpdateSearchMode,
+                    onUpdateSearchService = onUpdateSearchService,
                     onMoreClick = {
                         showFilesSheet = true
                     },
@@ -654,10 +657,6 @@ private fun ChatPageContent(
                 assistant = assistant,
                 vm = vm,
                 attachmentPickerActions = attachmentPickerActions,
-                enableSearch = enableWebSearch,
-                onUpdateSearchMode = onUpdateSearchMode,
-                onUpdateChatModel = onUpdateChatModel,
-                onUpdateSearchService = onUpdateSearchService,
                 onStartVoiceMode = onStartVoiceMode,
                 onDismiss = { showFilesSheet = false },
             )
@@ -673,10 +672,6 @@ private fun ChatFilesPickerSheet(
     assistant: Assistant,
     vm: ChatVM,
     attachmentPickerActions: ChatAttachmentPickerActions,
-    enableSearch: Boolean,
-    onUpdateSearchMode: (SearchMode) -> Unit,
-    onUpdateChatModel: (Model) -> Unit,
-    onUpdateSearchService: (Int) -> Unit,
     onStartVoiceMode: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -705,10 +700,6 @@ private fun ChatFilesPickerSheet(
             state = inputState,
             assistant = assistant,
             mcpManager = vm.mcpManager,
-            enableSearch = enableSearch,
-            onUpdateSearchMode = onUpdateSearchMode,
-            onUpdateChatModel = onUpdateChatModel,
-            onUpdateSearchService = onUpdateSearchService,
             onCompressContext = { additionalPrompt, targetTokens, keepRecentMessages ->
                 vm.handleCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
             },
