@@ -37,7 +37,7 @@ fun createSearchTools(settings: Settings): Set<Tool> {
                     Response format:
                     - retrievedAt is the local retrieval time, never a publication date
                     - items[].id (short id), index, title, url, publishedDate (if supplied), highlights (if supplied), text
-                    - items[].text is a snippet capped by the user's snippet length, not the full page. When it ends with "chars omitted", call scrape_web on that url instead of searching again.
+                    - items[].text is a snippet capped by the user's snippet length, not the full page. When it contains "chars omitted", call scrape_web on that url instead of searching again.
                     - images[]: image urls related to the query (may be empty)
 
                     Citations:
