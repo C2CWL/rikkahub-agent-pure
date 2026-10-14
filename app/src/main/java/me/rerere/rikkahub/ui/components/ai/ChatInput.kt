@@ -336,6 +336,10 @@ fun ChatInput(
                                 completionProviders = completionProviders,
                                 onSendMessage = { sendMessage() },
                                 onFocusChanged = { isFocused = it },
+                                // The pill is one line. A wrapping placeholder makes the whole bar
+                                // two rows tall, which is what "在想什么？" did once the model name
+                                // sat beside it. Multiline returns as soon as the bar opens.
+                                singleLine = !expanded,
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         },
@@ -422,7 +426,9 @@ internal fun compactModelLabel(name: String): String =
 
 /**
  * One entry for the chat model and, when the model can reason, its thinking depth.
- * Icon plus a truncated name on the bar; the sheet is the model list with the depth slider on top.
+ * Collapsed, only the icon: the name was what wrapped a five-character hint onto two lines.
+ * The name comes back once the bar opens and the field has its own row. The sheet is the model
+ * list with the depth slider on top.
  */
 @Composable
 private fun ModelReasoningChip(
@@ -439,13 +445,6 @@ private fun ModelReasoningChip(
         modelId = assistant.chatModelId ?: settings.chatModelId,
         providers = settings.providers,
         type = ModelType.CHAT,
-    )
-    val nameMaxWidth by animateDpAsState(
-        // 128 rather than 160: the open row also holds fullscreen, search and send, and 160
-        // overlaps them on a 384dp-wide phone.
-        targetValue = if (expanded) 128.dp else 72.dp,
-        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-        label = "modelChipWidth",
     )
     val fullName = model?.displayName?.takeIf { it.isNotBlank() }
         ?: model?.modelId?.takeIf { it.isNotBlank() }
@@ -498,13 +497,16 @@ private fun ModelReasoningChip(
                     }
                 }
             }
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = nameMaxWidth),
-            )
+            // Name only on the open bar. On the pill it stole the hint's line.
+            if (expanded) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 128.dp),
+                )
+            }
         }
     }
 
@@ -678,6 +680,7 @@ private fun TextInputRow(
     onSendMessage: () -> Unit,
     modifier: Modifier = Modifier,
     onFocusChanged: (Boolean) -> Unit = {},
+    singleLine: Boolean = false,
 ) {
     val settings = LocalSettings.current
     val assistant = settings.getCurrentAssistant()
@@ -803,7 +806,11 @@ private fun TextInputRow(
             placeholder = {
                 Text(stringResource(hint))
             },
-            lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
+            lineLimits = if (singleLine) {
+                TextFieldLineLimits.SingleLine
+            } else {
+                TextFieldLineLimits.MultiLine(maxHeightInLines = 5)
+            },
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Sentences,
                 imeAction = if (settings.displaySetting.sendOnEnter) ImeAction.Send else ImeAction.Default
