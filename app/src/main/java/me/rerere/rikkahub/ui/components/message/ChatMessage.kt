@@ -449,8 +449,8 @@ private fun MessagePartsBlock(
                                 val onPhoto = assistantTextNeedsPhotoPlate(
                                     darkTheme = LocalDarkMode.current,
                                     photoShown = chatPhotoShown(
-                                        assistant.background,
-                                        assistant.useGradientBackground,
+                                        assistant?.background,
+                                        assistant?.useGradientBackground == true,
                                     ),
                                     showAssistantBubble = settings.displaySetting.showAssistantBubble,
                                 )
