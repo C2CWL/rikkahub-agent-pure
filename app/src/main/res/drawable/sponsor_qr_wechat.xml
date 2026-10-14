@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Placeholder donation QR code. Replace with the real image: drop a PNG/JPG named
+     sponsor_qr_wechat (or sponsor_qr_alipay) here and delete this placeholder .xml. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="512dp"
+    android:height="512dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M0,0h512v512h-512z" />
+    <!-- top-left finder -->
+    <path android:fillColor="#FF37474F" android:pathData="M40,40h120v120h-120z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M64,64h72v72h-72z" />
+    <path android:fillColor="#FF37474F" android:pathData="M88,88h24v24h-24z" />
+    <!-- top-right finder -->
+    <path android:fillColor="#FF37474F" android:pathData="M352,40h120v120h-120z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M376,64h72v72h-72z" />
+    <path android:fillColor="#FF37474F" android:pathData="M400,88h24v24h-24z" />
+    <!-- bottom-left finder -->
+    <path android:fillColor="#FF37474F" android:pathData="M40,352h120v120h-120z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M64,376h72v72h-72z" />
+    <path android:fillColor="#FF37474F" android:pathData="M88,400h24v24h-24z" />
+    <!-- scattered modules -->
+    <path android:fillColor="#FF37474F" android:pathData="M200,40h32v32h-32zM264,40h32v32h-32zM200,104h32v32h-32zM264,104h32v32h-32zM40,200h32v32h-32zM104,200h32v32h-32zM168,200h32v32h-32zM232,200h32v32h-32zM296,200h32v32h-32zM360,200h32v32h-32zM424,200h32v32h-32zM40,264h32v32h-32zM168,264h32v32h-32zM296,264h32v32h-32zM424,264h32v32h-32zM200,328h32v32h-32zM264,328h32v32h-32zM360,328h32v32h-32zM200,392h32v32h-32zM328,392h32v32h-32zM392,392h32v32h-32zM232,424h32v32h-32zM296,424h32v32h-32zM392,456h32v32h-32z" />
+</vector>
