@@ -71,9 +71,9 @@ private data class SponsorLink(
 ) : SponsorMethod
 
 /**
- * QR-code channels. Replace the placeholder drawables with the real codes: drop a PNG named
- * `sponsor_qr_wechat` / `sponsor_qr_alipay` into `res/drawable` (and delete the matching `.xml`
- * placeholder) - the resource name is what the page resolves, the image format does not matter.
+ * QR-code channels. The drawables are the real payment codes: to change one, replace
+ * `res/drawable/sponsor_qr_wechat.png` / `sponsor_qr_alipay.png` with a new image of the same
+ * resource name - the format does not matter.
  */
 private val SPONSOR_QR_METHODS: List<SponsorQr> = listOf(
     SponsorQr(
