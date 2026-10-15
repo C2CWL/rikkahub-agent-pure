@@ -137,11 +137,15 @@ private const val PANEL_SCALE_FROM = 0.86f
 private val PANEL_SHAPE = RoundedCornerShape(28.dp)
 
 /**
- * How much of the panel's own surface colour survives. Deliberately below 1: the activity's window
- * asks the OS for a background blur, so the app underneath shows through softened, and the panel
- * reads as frosted glass rather than an opaque slab.
+ * How much of the panel's own surface colour survives when the OS is blurring behind us.
+ * Deliberately below 1: the app underneath shows through softened, so the panel reads as frosted
+ * glass rather than an opaque slab. Without that blur the same alpha would just wash the panel out
+ * over a busy app, so [PANEL_SURFACE_ALPHA_OPAQUE] takes over — see `blurredBackdrop`.
  */
 private const val PANEL_SURFACE_ALPHA = 0.86f
+
+/** Colour alpha used when there is no backdrop blur to lean on: nearly opaque, still not flat. */
+private const val PANEL_SURFACE_ALPHA_OPAQUE = 0.97f
 
 /**
  * Reuse the conversation the user was last in; fall back to a fresh one on first use. The main
@@ -178,6 +182,7 @@ fun QuickChatPanel(
     holdToTalk: Boolean,
     mirror: Boolean,
     ballCenterY: Int,
+    blurredBackdrop: Boolean,
     onUnfoldStart: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -531,7 +536,9 @@ fun QuickChatPanel(
             // Translucent on purpose: QuickChatActivity's window requests a background blur, so
             // what shows through here is a softened copy of the app underneath — the panel reads
             // as a pane of frosted glass hovering over it instead of an opaque slab of colour.
-            color = MaterialTheme.colorScheme.surface.copy(alpha = PANEL_SURFACE_ALPHA),
+            color = MaterialTheme.colorScheme.surface.copy(
+                alpha = if (blurredBackdrop) PANEL_SURFACE_ALPHA else PANEL_SURFACE_ALPHA_OPAQUE,
+            ),
             border = BorderStroke(
                 width = 1.dp,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
