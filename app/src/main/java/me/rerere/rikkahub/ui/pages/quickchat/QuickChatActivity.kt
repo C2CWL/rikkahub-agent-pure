@@ -94,6 +94,9 @@ class QuickChatActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         noSystemTransition()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            window.setBackgroundBlurRadius(50)
+        }
         readPanelExtras(intent)
         setContent {
             RikkahubTheme {
