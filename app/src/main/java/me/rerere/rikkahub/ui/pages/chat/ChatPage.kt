@@ -79,6 +79,7 @@ import me.rerere.hugeicons.stroke.Menu03
 import me.rerere.hugeicons.stroke.MessageAdd01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.costguards.TokenBudgetTracker
+import me.rerere.rikkahub.data.usage.TurnFooter
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -643,6 +644,7 @@ private fun ChatPageContent(
                     TopBar(
                         settings = setting,
                         conversation = conversation,
+                        turnFooters = turnFooters,
                         bigScreen = bigScreen,
                         drawerState = drawerState,
                         hazeState = hazeState,
@@ -758,6 +760,7 @@ private fun ChatFilesPickerSheet(
 private fun TopBar(
     settings: Settings,
     conversation: Conversation,
+    turnFooters: Map<String, TurnFooter>,
     drawerState: DrawerState,
     hazeState: HazeState,
     bigScreen: Boolean,
@@ -822,9 +825,18 @@ private fun TopBar(
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (model != null) {
-                        // Same aggregation the `check_token_usage` tool reports: every selected
-                        // message's reported usage, summed over the current branch.
-                        val usedTokens = remember(conversation) { TokenBudgetTracker.aggregate(conversation).totalTokens }
+                        // Aggregate conversation token consumption across all turns and tool calls.
+                        // UsageLedger (turnFooters) is the ground truth (includes all tool loop steps);
+                        // fallback to TokenBudgetTracker for legacy or imported conversations without ledger rows.
+                        val usedTokens = remember(turnFooters, conversation) {
+                            val ledgerTokens = turnFooters.values.mapNotNull { it.usage }
+                                .sumOf { it.inputTokens + it.outputTokens }
+                            if (ledgerTokens > 0L) {
+                                ledgerTokens
+                            } else {
+                                TokenBudgetTracker.aggregate(conversation).totalTokens
+                            }
+                        }
                         Text(
                             text = "${assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) }} / ${model.displayName} / $usedTokens token",
                             overflow = TextOverflow.Ellipsis,
