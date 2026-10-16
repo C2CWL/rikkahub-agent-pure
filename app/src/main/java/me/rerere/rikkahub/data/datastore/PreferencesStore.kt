@@ -62,6 +62,7 @@ import me.rerere.rikkahub.data.sync.BackupItem
 import me.rerere.rikkahub.data.sync.s3.S3Config
 import me.rerere.rikkahub.data.vector.CloudEmbeddingRules
 import me.rerere.rikkahub.subagent.SubAgentDefaults
+import me.rerere.rikkahub.subagent.SubAgentDispatchProfile
 import me.rerere.rikkahub.ui.theme.CustomTheme
 import me.rerere.rikkahub.ui.theme.PresetThemes
 import me.rerere.rikkahub.utils.JsonInstant
@@ -249,6 +250,7 @@ class SettingsStore(
          * field: this key, the write in [persistSettings], and the read when [Settings] is rebuilt.
          */
         val SUB_AGENT_GLOBAL_CONCURRENCY_CAP = intPreferencesKey("sub_agent_global_concurrency_cap")
+        val SUB_AGENT_DISPATCH_PROFILE = stringPreferencesKey("sub_agent_dispatch_profile")
 
         // 搜索
         val SEARCH_SERVICES = stringPreferencesKey("search_services")
@@ -385,6 +387,8 @@ class SettingsStore(
                         SubAgentDefaults.MIN_GLOBAL_CONCURRENCY_CAP,
                         SubAgentDefaults.MAX_GLOBAL_CONCURRENCY_CAP,
                     )
+                preferences[SUB_AGENT_DISPATCH_PROFILE] =
+                    settings.subAgentDispatchProfile.name
 
                 preferences[SEARCH_SERVICES] = JsonInstant.encodeToString(settings.searchServices)
                 preferences[SEARCH_COMMON] = JsonInstant.encodeToString(settings.searchCommonOptions)
@@ -538,6 +542,11 @@ class SettingsStore(
                         SubAgentDefaults.MIN_GLOBAL_CONCURRENCY_CAP,
                         SubAgentDefaults.MAX_GLOBAL_CONCURRENCY_CAP,
                     ),
+                subAgentDispatchProfile = runCatching {
+                    SubAgentDispatchProfile.valueOf(
+                        preferences[SUB_AGENT_DISPATCH_PROFILE] ?: ""
+                    )
+                }.getOrDefault(SubAgentDispatchProfile.NEVER),
                 themeId = preferences[THEME_ID] ?: PresetThemes[0].id,
                 customThemes = preferences[CUSTOM_THEMES]?.let { raw ->
                     runCatching { JsonInstant.decodeFromString<List<CustomTheme>>(raw) }.getOrElse {
@@ -1043,6 +1052,10 @@ data class Settings(
      * [SubAgentDefaults.MIN_GLOBAL_CONCURRENCY_CAP]..[SubAgentDefaults.MAX_GLOBAL_CONCURRENCY_CAP].
      */
     val subAgentGlobalConcurrencyCap: Int = SubAgentDefaults.GLOBAL_CONCURRENCY_CAP,
+    /**
+     * The five-level dispatch posture (拍板: default NEVER). See [SubAgentDispatchProfile].
+     */
+    val subAgentDispatchProfile: SubAgentDispatchProfile = SubAgentDispatchProfile.NEVER,
     /**
      * Names of bundled default-on skills (see [DEFAULT_AUTO_ENABLED_SKILLS]) that have already
      * been seeded into the default assistants' enabledSkills exactly once. Mirrors
