@@ -32,6 +32,7 @@ private const val TAG = "GHReleaseChecker"
 class GitHubReleaseChecker(
     private val client: OkHttpClient,
     private val repo: String = DEFAULT_REPO,
+    private val enabled: Boolean = true,
 ) {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -64,6 +65,10 @@ class GitHubReleaseChecker(
     }
 
     suspend fun check(): CheckResult = withContext(Dispatchers.IO) {
+        if (!enabled) {
+            val current = BuildConfig.VERSION_NAME
+            return@withContext CheckResult.UpToDate(current, Release(tag_name = "v$current", name = current))
+        }
         val req = Request.Builder()
             .url(latestUrl)
             .get()

@@ -2,6 +2,7 @@ package me.rerere.rikkahub.di
 
 import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.AppScope
+import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.data.ai.AILoggingManager
 import me.rerere.rikkahub.data.ai.tools.ChatToolFactory
 import me.rerere.rikkahub.data.ai.tools.LocalTools
@@ -97,7 +98,7 @@ val appModule = module {
     }
 
     // Phase 14: Reliability bundle
-    single { me.rerere.rikkahub.reliability.GitHubReleaseChecker(get()) }
+    single { me.rerere.rikkahub.reliability.GitHubReleaseChecker(get(), enabled = BuildConfig.UPDATE_CHECK_ENABLED) }
     single { me.rerere.rikkahub.reliability.BugReportBuilder(get()) }
 
     // Phase 11: Sub-agents
