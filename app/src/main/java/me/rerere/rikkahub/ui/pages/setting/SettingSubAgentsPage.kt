@@ -38,7 +38,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.FilterChip
 import androidx.compose.ui.text.font.FontWeight
-import me.rerere.rikkahub.data.datastore.PreferencesStore
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.subagent.SubAgentDispatchProfile
 import me.rerere.rikkahub.subagent.SubAgentDispatchProfileRules
 import androidx.compose.material3.Scaffold
@@ -199,7 +199,7 @@ fun SettingSubAgentsPage(
                 // Dispatch profile selector — five-level posture (拍板: default NEVER).
                 item {
                     val profile = settings.subAgentDispatchProfile
-                    val prefs = koinInject<PreferencesStore>()
+                    val prefs = koinInject<SettingsStore>()
                     val pscope = rememberCoroutineScope()
                     Column(
                         modifier = Modifier.fillMaxWidth(),
