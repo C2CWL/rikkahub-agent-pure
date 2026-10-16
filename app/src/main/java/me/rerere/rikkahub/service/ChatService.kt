@@ -2138,7 +2138,10 @@ class ChatService(
             val routedModel = modelRouter.nextRouteCandidate(
                 favorites = settings.favoriteModels,
                 findModel = { id -> settings.findModelById(id) },
-                isUsable = { m -> m.takeIfUsable() != null },
+                isUsable = { m ->
+                    m.id != DEFAULT_AUTO_MODEL_ID &&
+                        m.findProvider(settings.providers)?.enabled == true
+                },
                 exclude = routeExclude,
             )
             if (routedModel != null) {
