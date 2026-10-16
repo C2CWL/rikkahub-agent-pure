@@ -99,6 +99,7 @@ import me.rerere.rikkahub.data.ai.tools.InvalidMcpServerNamesException
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.ai.tools.createSearchTools
 import me.rerere.rikkahub.data.ai.tools.createSkillTools
+import me.rerere.rikkahub.data.datastore.SkillGroupRules
 import me.rerere.rikkahub.data.ai.tools.CompactionToolResult
 import me.rerere.rikkahub.data.ai.tools.buildCompactionTools
 import me.rerere.rikkahub.data.ai.tools.createWorkspaceTools
@@ -1615,6 +1616,7 @@ class ChatService(
                     enabledSkills = surfaceAssistant.enabledSkills,
                     allSkills = skillManager.listSkills(),
                     skillManager = skillManager,
+                    disabledSkills = SkillGroupRules.disabledSkillNames(settings.skillGroups),
                 )
             )
         }
@@ -1977,8 +1979,9 @@ class ChatService(
                     } else {
                         skillManager.listSkills()
                     }
+                    val disabledSkills = SkillGroupRules.disabledSkillNames(settings.skillGroups)
                     val enabledSkillList = allSkillsForSurface
-                        .filter { it.name in surfaceAssistant.enabledSkills }
+                        .filter { it.name in surfaceAssistant.enabledSkills && it.name !in disabledSkills }
                     var visibleSkillNames: Set<String>? = null
                     val skillTools = if (enabledSkillList.isEmpty()) {
                         emptyList()
@@ -1989,6 +1992,7 @@ class ChatService(
                             skillManager = skillManager,
                             // Read by `systemPrompt`, which runs after the whole surface exists.
                             visibleSkillNames = { visibleSkillNames },
+                            disabledSkills = disabledSkills,
                         )
                     }
                     val useSkillTool = skillTools.firstOrNull { it.name == "use_skill" }

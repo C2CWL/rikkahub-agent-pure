@@ -35,8 +35,15 @@ fun createSkillTools(
      * so there has never been anything to retrieve about them.
      */
     visibleSkillNames: (() -> Set<String>?)? = null,
+    /**
+     * Skill names suppressed by a disabled group (see
+     * [me.rerere.rikkahub.data.datastore.SkillGroupRules.disabledSkillNames]). A skill in
+     * this set never surfaces to the model even if the assistant has it enabled — this is
+     * the whole-group on/off switch. Default empty so existing callers are unchanged.
+     */
+    disabledSkills: Set<String> = emptySet(),
 ): List<Tool> {
-    val available = allSkills.filter { it.name in enabledSkills }
+    val available = allSkills.filter { it.name in enabledSkills && it.name !in disabledSkills }
     if (available.isEmpty()) return emptyList()
 
     return listOfNotNull(
@@ -47,6 +54,7 @@ fun createSkillTools(
                 enabledSkills = enabledSkills,
                 allSkills = allSkills,
                 contentReader = manager::getContent,
+                disabledSkills = disabledSkills,
             )
         },
         Tool(
