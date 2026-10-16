@@ -68,6 +68,11 @@ android {
             buildConfigField("String", "VERSION_NAME", "\"0.1.0\"")
             buildConfigField("String", "VERSION_CODE", "\"1\"")
             buildConfigField("String", "UPDATE_API_URL", "\"\"")
+            // Moxw ships from its own branch and has never published a GitHub Release on
+            // this repo — all releases here are Pure-line tags (vX.Y.Z-pure.N).  Without
+            // this guard the Moxw build fetches the latest Pure release, compares it
+            // against versionName 0.1.0, and wrongly offers a Pure APK as an update.
+            buildConfigField("boolean", "UPDATE_CHECK_ENABLED", "false")
         }
     }
 

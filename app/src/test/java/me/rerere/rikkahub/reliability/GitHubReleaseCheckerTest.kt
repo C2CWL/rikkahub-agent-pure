@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.reliability
 
+import kotlinx.coroutines.runBlocking
+import me.rerere.rikkahub.BuildConfig
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -112,5 +114,21 @@ class GitHubReleaseCheckerTest {
         assertEquals("", formatAssetSize(0))
         assertEquals("1.0 MB", formatAssetSize(1_048_576))
         assertEquals("512 KB", formatAssetSize(524_288))
+    }
+
+    // --- disabled checker (Moxw: no pure-line update push) ------------------------------
+
+    @Test fun `disabled checker short-circuits without network call`() {
+        val result = runBlocking { GitHubReleaseChecker(OkHttpClient(), enabled = false).check() }
+        assertTrue(result is GitHubReleaseChecker.CheckResult.UpToDate)
+        val upToDate = result as GitHubReleaseChecker.CheckResult.UpToDate
+        assertEquals("v${BuildConfig.VERSION_NAME}", upToDate.latest.tag_name)
+        assertEquals(BuildConfig.VERSION_NAME, upToDate.current)
+    }
+
+    @Test fun `enabled checker still fires the constructor default`() {
+        // Default must stay true so pure-line builds keep checking.
+        val defaultChecker = GitHubReleaseChecker(OkHttpClient())
+        assertTrue(defaultChecker.isNewer("2.5.4-pure.2", "2.5.1-pure.7"))
     }
 }
