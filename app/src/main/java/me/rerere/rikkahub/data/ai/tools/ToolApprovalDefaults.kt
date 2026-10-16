@@ -81,6 +81,14 @@ object ToolApprovalDefaults {
 
         // Shell via Shizuku (shell UID, no root)
         "shizuku_exec",
+
+        // Virtual display: launches apps + injects input via Shizuku shell
+        "virtual_display_create",
+        "virtual_display_launch",
+        "virtual_display_tap",
+        "virtual_display_swipe",
+        "virtual_display_key",
+        "virtual_display_text",
         // Shell via Shizuku/Sui with the ROOT UID. On the blacklist by default (see
         // [DEFAULT_BLACKLISTED]) and refused in headless runs (see HeadlessToolApprovalPolicy).
         ROOT_EXEC_TOOL_NAME,
