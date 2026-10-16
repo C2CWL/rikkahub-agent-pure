@@ -215,6 +215,9 @@ sealed class LocalToolOption {
     @Serializable @SerialName("image_generation")     data object ImageGeneration     : LocalToolOption()
     @Serializable @SerialName("video_generation")     data object VideoGeneration     : LocalToolOption()
 
+    // Virtual display: run apps off-screen without stealing foreground.
+    @Serializable @SerialName("virtual_display")      data object VirtualDisplay      : LocalToolOption()
+
     // P2-37 model-roster tools (model_list / model_add / model_update / model_delete)
     @Serializable @SerialName("model_control")        data object ModelControl        : LocalToolOption()
 }
@@ -872,6 +875,16 @@ class LocalTools(
             // depends on how the user started Shizuku (or whether Sui is installed), and that is a
             // runtime property the model cannot see until it asks.
             tools.add(me.rerere.rikkahub.data.ai.tools.local.rootExecTool(context))
+        }
+        if (options.contains(LocalToolOption.VirtualDisplay)) {
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.virtualDisplayCreateTool(context))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.virtualDisplayDestroyTool())
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.virtualDisplayListTool())
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.virtualDisplayLaunchTool(context))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.virtualDisplayTapTool(context))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.virtualDisplaySwipeTool(context))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.virtualDisplayKeyTool(context))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.virtualDisplayTextTool(context))
         }
         if (options.contains(LocalToolOption.TelegramBot)) {
             tools.add(telegramSetTokenTool(telegramBotPreferences, telegramBotClient))
