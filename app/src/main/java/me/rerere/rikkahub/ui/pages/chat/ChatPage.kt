@@ -511,6 +511,9 @@ private fun ChatPageContent(
                     enableSearch = enableWebSearch,
                     conversationChatModelId = conversation.chatModelId,
                     onUpdateChatModel = onUpdateChatModel,
+                    onUpdateModelReasoningLevel = { model, level ->
+                        vm.setModelReasoningLevel(model, level)
+                    },
                     onUpdateSearchMode = onUpdateSearchMode,
                     onUpdateSearchService = onUpdateSearchService,
                     onMoreClick = {
