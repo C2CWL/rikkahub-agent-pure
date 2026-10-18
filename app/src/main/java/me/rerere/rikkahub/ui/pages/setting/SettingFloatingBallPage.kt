@@ -25,6 +25,9 @@ import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -59,6 +62,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.service.HaloBallView
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.FloatingBallStyle
 import me.rerere.rikkahub.service.FloatingBallService
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
@@ -213,6 +217,40 @@ fun SettingFloatingBallPage(vm: SettingVM = koinViewModel()) {
 
             item {
                 CardGroup(modifier = Modifier.padding(horizontal = 8.dp)) {
+                    item(
+                        headlineContent = {
+                            Text(stringResource(R.string.setting_floating_ball_style_title))
+                        },
+                        supportingContent = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(stringResource(R.string.setting_floating_ball_style_desc))
+                                val styles = FloatingBallStyle.entries
+                                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                                    styles.forEachIndexed { index, style ->
+                                        SegmentedButton(
+                                            selected = settings.floatingBallStyle == style,
+                                            onClick = {
+                                                vm.updateSettings { it.copy(floatingBallStyle = style) }
+                                            },
+                                            shape = SegmentedButtonDefaults.itemShape(
+                                                index = index,
+                                                count = styles.size,
+                                            ),
+                                        ) {
+                                            Text(
+                                                stringResource(
+                                                    when (style) {
+                                                        FloatingBallStyle.ORIGINAL -> R.string.setting_floating_ball_style_original
+                                                        FloatingBallStyle.CAPSULE -> R.string.setting_floating_ball_style_capsule
+                                                    }
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    )
                     item(
                         onClick = { showIconDialog = true },
                         leadingContent = {
