@@ -78,19 +78,39 @@ internal fun assistantTextNeedsPhotoPlate(
 internal enum class UsageLineInk { SECONDARY, ON_SURFACE }
 
 /**
- * Usage line styling. [plateAlpha] is the `surface` plate behind the line, or null for none.
+ * Usage line styling. [plateAlpha] is the `surface` plate (or, when frosted, the `surface`
+ * tint over the blurred wallpaper) behind the line, or null for none. [blurRadiusDp] is the
+ * wallpaper blur under the plate, or null for a flat plate.
  */
-internal data class UsageLineStyle(val ink: UsageLineInk, val inkAlpha: Float, val plateAlpha: Float?)
+internal data class UsageLineStyle(
+    val ink: UsageLineInk,
+    val inkAlpha: Float,
+    val plateAlpha: Float?,
+    val blurRadiusDp: Float? = null,
+)
+
+/** Haze source key of the chat wallpaper, so the usage line blurs only the photo, not messages. */
+internal const val CHAT_WALLPAPER_HAZE_KEY = "chat_wallpaper"
 
 /**
- * Off a photo the line stays the quiet `secondary@0.5`. On a photo it follows the title
- * subtitle: neutral onSurface text (a tinted `secondary` clashes with sky / sea / flower
- * photos) on the title's plate, in both themes. The old `surface@0.55` plate let too much
- * of a busy photo through.
+ * Off a photo the line stays the quiet `secondary@0.5`. On a photo it uses neutral onSurface
+ * text (a tinted `secondary` clashes with sky / sea / flower photos), in both themes:
+ *
+ *  - [frosted] (API 31+ and the wallpaper is a blur source): a frosted pill. The photo under it
+ *    is blurred, which removes the texture that made text hard to read. A lighter
+ *    `surface@0.70` tint is then enough, with slightly stronger ink.
+ *  - otherwise: the flat title plate, `surface@0.86`.
  */
-internal fun usageLineStyle(photoShown: Boolean): UsageLineStyle =
-    if (photoShown) {
-        UsageLineStyle(UsageLineInk.ON_SURFACE, inkAlpha = 0.72f, plateAlpha = PHOTO_TITLE_PLATE_ALPHA)
-    } else {
-        UsageLineStyle(UsageLineInk.SECONDARY, inkAlpha = 0.5f, plateAlpha = null)
-    }
+internal fun usageLineStyle(photoShown: Boolean, frosted: Boolean = false): UsageLineStyle = when {
+    !photoShown -> UsageLineStyle(UsageLineInk.SECONDARY, inkAlpha = 0.5f, plateAlpha = null)
+    frosted -> UsageLineStyle(
+        UsageLineInk.ON_SURFACE,
+        inkAlpha = 0.85f,
+        plateAlpha = USAGE_FROSTED_TINT_ALPHA,
+        blurRadiusDp = USAGE_FROSTED_BLUR_DP,
+    )
+    else -> UsageLineStyle(UsageLineInk.ON_SURFACE, inkAlpha = 0.72f, plateAlpha = PHOTO_TITLE_PLATE_ALPHA)
+}
+
+internal const val USAGE_FROSTED_TINT_ALPHA = 0.70f
+internal const val USAGE_FROSTED_BLUR_DP = 16f

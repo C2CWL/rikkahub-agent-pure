@@ -1,7 +1,9 @@
 package me.rerere.rikkahub.ui.components.message
 
+import android.os.Build
 import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,13 +13,22 @@ import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.HazeSourceSelection
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.HazeColorEffect
+import dev.chrisbanes.haze.blur.hazeBlur
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.usage.TurnFooter
 import me.rerere.rikkahub.ui.context.LocalSettings
+import me.rerere.rikkahub.ui.pages.chat.CHAT_WALLPAPER_HAZE_KEY
 import me.rerere.rikkahub.ui.pages.chat.UsageLineInk
 import me.rerere.rikkahub.ui.pages.chat.usageLineStyle
 
@@ -37,13 +48,16 @@ fun ChatMessageNerdLine(
     turnFooter: TurnFooter? = null,
     modifier: Modifier = Modifier,
     photoShown: Boolean = false,
+    hazeState: HazeState? = null,
 ) {
     val settings = LocalSettings.current.displaySetting
     // A user message has no turn footer; when the ledger has nothing to say and the turn is not
     // running there is simply nothing to draw.
     if (!settings.showTokenUsage || turnFooter == null) return
 
-    val style = usageLineStyle(photoShown)
+    // Frosted only where Haze blurs for real (API 31+) and the page gave us its haze state.
+    val frosted = hazeState != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val style = usageLineStyle(photoShown, frosted)
     val ink = when (style.ink) {
         UsageLineInk.ON_SURFACE -> MaterialTheme.colorScheme.onSurface
         UsageLineInk.SECONDARY -> MaterialTheme.colorScheme.secondary
@@ -53,7 +67,32 @@ fun ChatMessageNerdLine(
     ProvideTextStyle(MaterialTheme.typography.labelSmall.copy(color = color)) {
         CompositionLocalProvider(LocalContentColor provides color) {
             val plateAlpha = style.plateAlpha
-            if (plateAlpha != null) {
+            val blurDp = style.blurRadiusDp
+            if (plateAlpha != null && blurDp != null && hazeState != null) {
+                val shape = RoundedCornerShape(12.dp)
+                val backdrop = MaterialTheme.colorScheme.background
+                val tint = MaterialTheme.colorScheme.surface.copy(alpha = plateAlpha)
+                val blurStyle = remember(backdrop, tint, blurDp) {
+                    HazeBlurStyle {
+                        backgroundColor(backdrop)
+                        blurRadius(blurDp.dp)
+                        colorEffects(listOf(HazeColorEffect.tint(tint)))
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(shape)
+                        .hazeBlur(
+                            input = HazeInput.Sources(hazeState, selection = WallpaperOnlySelection),
+                            style = blurStyle,
+                        ),
+                ) {
+                    TurnUsageLine(
+                        footer = turnFooter,
+                        modifier = modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+            } else if (plateAlpha != null) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surface.copy(alpha = plateAlpha),
@@ -69,6 +108,14 @@ fun ChatMessageNerdLine(
         }
     }
 }
+
+/**
+ * Only the wallpaper source. The message list is a source of the same state and an ancestor of
+ * this line; selecting it would blur other messages and feed the effect into itself.
+ * Kept as one instance so [HazeInput.Sources] stays equal across recompositions.
+ */
+private val WallpaperOnlySelection: HazeSourceSelection =
+    HazeSourceSelection.All.where { it.key == CHAT_WALLPAPER_HAZE_KEY }
 
 // Generation cost is often a tiny fraction of a cent, so a fixed decimal count would show
 // "$0.0000". Render up to 6 decimals and trim trailing zeros (e.g. "$0.0123", "$0.000045").

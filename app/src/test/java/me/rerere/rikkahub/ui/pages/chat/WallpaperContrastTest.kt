@@ -113,4 +113,21 @@ class WallpaperContrastTest {
         assertEquals(0.72f, style.inkAlpha, 0f)
         assertEquals(PHOTO_TITLE_PLATE_ALPHA, style.plateAlpha!!, 0f)
     }
+
+    @Test fun `usage line on a photo is a lighter frosted tint when blur is available`() {
+        val style = usageLineStyle(photoShown = true, frosted = true)
+        assertEquals(UsageLineInk.ON_SURFACE, style.ink)
+        assertEquals(0.85f, style.inkAlpha, 0f)
+        assertEquals(USAGE_FROSTED_TINT_ALPHA, style.plateAlpha!!, 0f)
+        assertEquals(USAGE_FROSTED_BLUR_DP, style.blurRadiusDp!!, 0f)
+        // The blur carries part of the contrast, so the tint is lighter than the flat plate.
+        assertTrue(style.plateAlpha!! < PHOTO_TITLE_PLATE_ALPHA)
+    }
+
+    @Test fun `usage line falls back to the flat plate without blur, and never frosts off a photo`() {
+        assertNull(usageLineStyle(photoShown = true, frosted = false).blurRadiusDp)
+        val offPhoto = usageLineStyle(photoShown = false, frosted = true)
+        assertNull(offPhoto.plateAlpha)
+        assertNull(offPhoto.blurRadiusDp)
+    }
 }
