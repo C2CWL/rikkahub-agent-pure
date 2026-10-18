@@ -23,7 +23,7 @@ import java.io.File
  * This step runs once, right after the restore writes `rikka_hub.db`, on the raw file before
  * Room touches it:
  *  - It creates any of the fork-only tables that are missing, empty, with the exact schema
- *    Room expects (copied verbatim from app/schemas/.../31.json), so the file looks like a
+ *    Room expects (copied verbatim from app/schemas/.../32.json), so the file looks like a
  *    clean agent install for those tables.
  *  - It backfills the indices and columns that Room would normally add via the auto-migrations
  *    between the restored version and [EXPECTED_VERSION] (see [BACKFILL_INDEX_DDL] and the
@@ -54,15 +54,15 @@ object ImportedDatabaseReconciler {
 
     /**
      * Room's schema version and identity hash for [AppDatabase]. Both are copied verbatim
-     * from app/schemas/me.rerere.rikkahub.data.db.AppDatabase/31.json (the identity hash also
+     * from app/schemas/me.rerere.rikkahub.data.db.AppDatabase/32.json (the identity hash also
      * appears in the generated AppDatabase_Impl RoomOpenDelegate). When the schema version is
      * bumped, update BOTH constants (and the table DDL below if the fork-only tables changed,
      * BACKFILL_INDEX_DDL if any entity gained/lost an index, and MODERN_COLUMN_SENTINELS if
      * newer *shared* conversation columns were added) or this reconciliation will silently stop
      * matching. `internal` so a JVM test can assert these stay in sync with the schema export.
      */
-    internal const val EXPECTED_VERSION = 31
-    internal const val EXPECTED_IDENTITY_HASH = "61a9c9769b0c9f68743007339a58e420"
+    internal const val EXPECTED_VERSION = 32
+    internal const val EXPECTED_IDENTITY_HASH = "b83702a109c875508ff53c50ad9263f7"
 
     /**
      * Columns that a restored file must already have for its shared schema to be considered
@@ -104,6 +104,15 @@ object ImportedDatabaseReconciler {
         "CREATE INDEX IF NOT EXISTS `idx_runs_kind_dom` ON `agent_runs` (`kind`, `domain_id`)",
         "CREATE INDEX IF NOT EXISTS `idx_runs_parent` ON `agent_runs` (`parent_run_id`)",
         "CREATE INDEX IF NOT EXISTS `idx_runs_updated_at` ON `agent_runs` (`updated_at_ms`)",
+        // v32 workbench tables (verbatim from 32.json): a v31 moxw backup carries no mission
+        // tables, and the "already current" stamp below would skip the auto-migration that
+        // creates them — the DAOs would then hit "no such table: missions" on first launch.
+        "CREATE TABLE IF NOT EXISTS `missions` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `description` TEXT NOT NULL, `status` TEXT NOT NULL, `acceptance_json` TEXT NOT NULL, `acceptance_checked_json` TEXT NOT NULL, `conversation_id` TEXT, `assistant_id` TEXT, `artifact_count` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, `completed_at` INTEGER, PRIMARY KEY(`id`))",
+        "CREATE INDEX IF NOT EXISTS `index_missions_status` ON `missions` (`status`)",
+        "CREATE INDEX IF NOT EXISTS `index_missions_conversation_id` ON `missions` (`conversation_id`)",
+        "CREATE INDEX IF NOT EXISTS `index_missions_updated_at` ON `missions` (`updated_at`)",
+        "CREATE TABLE IF NOT EXISTS `mission_events` (`id` TEXT NOT NULL, `mission_id` TEXT NOT NULL, `type` TEXT NOT NULL, `title` TEXT NOT NULL, `detail` TEXT, `payload_json` TEXT, `created_at` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`mission_id`) REFERENCES `missions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "CREATE INDEX IF NOT EXISTS `index_mission_events_mission_id_created_at` ON `mission_events` (`mission_id`, `created_at`)",
     )
 
     /**
