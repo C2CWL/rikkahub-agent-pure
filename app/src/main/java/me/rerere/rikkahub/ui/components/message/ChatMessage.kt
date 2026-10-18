@@ -400,6 +400,10 @@ private fun MessagePartsBlock(
                     ChainOfThought(
                         modifier = Modifier.animateContentSize(),
                         steps = block.steps,
+                        collapsedVisibleCount = thinkingStepsCollapsedVisibleCount(
+                            setting = settings.displaySetting.thinkingStepsVisibleCount,
+                            isStreamingTail = loading && block === groupedParts.lastOrNull(),
+                        ),
                         collapsedAdaptiveWidth = isReasoningOnlyBlock,
                         forceExpanded = hasPendingApproval,
                         cardColors = CardDefaults.cardColors(
