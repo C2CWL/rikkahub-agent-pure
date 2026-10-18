@@ -1024,6 +1024,9 @@ private fun GlassTopBarButton(
  * edge; this watches drags that START in the right 40% of the screen and only consumes once the
  * finger is clearly travelling left (the direction that reveals the right-side drawer), so
  * vertical scrolling and horizontally-scrollable content inside the chat stay unaffected.
+ *
+ * Direction is read from the finger's displacement since touch-down: the `over` slop-crossed
+ * amount is unsigned, so checking its sign never fires.
  */
 private fun Modifier.workbenchRightEdgeSwipe(
     enabled: Boolean,
@@ -1033,8 +1036,8 @@ private fun Modifier.workbenchRightEdgeSwipe(
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
         if (down.position.x < size.width * 0.6f) return@awaitEachGesture
-        val drag = awaitHorizontalTouchSlopOrCancellation(down.id) { change, over ->
-            if (over < 0f) change.consume()
+        val drag = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ ->
+            if (change.position.x - down.position.x < 0f) change.consume()
         }
         if (drag != null && drag.isConsumed) {
             onOpen()
