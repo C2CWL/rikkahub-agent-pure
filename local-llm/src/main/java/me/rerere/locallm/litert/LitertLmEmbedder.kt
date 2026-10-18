@@ -223,6 +223,7 @@ class LitertLmEmbedder(
         path: String,
         signature: Int,
         backend: LitertEmbedBackend = LitertEmbedBackend.CPU,
+        probeText: String = " ",
     ): LitertEmbedInfo = lock.withLock {
         info?.let { if (loadedPath == path && it.accelerator == backend.name.lowercase()) return@withLock it }
 
@@ -234,11 +235,11 @@ class LitertLmEmbedder(
             backend
         }
         val opened = try {
-            openAndMeasure(path, signature, preferred)
+            openAndMeasure(path, signature, preferred, probeText)
         } catch (t: Throwable) {
             if (preferred == LitertEmbedBackend.CPU) throw t
             failedBackends += preferred.name.lowercase()
-            openAndMeasure(path, signature, LitertEmbedBackend.CPU)
+            openAndMeasure(path, signature, LitertEmbedBackend.CPU, probeText)
         }
 
         session = opened.session
@@ -262,6 +263,7 @@ class LitertLmEmbedder(
         path: String,
         signature: Int,
         backend: LitertEmbedBackend,
+        probeText: String,
     ): Opened {
         val opened = native.open(
             modelPath = path,
@@ -271,11 +273,14 @@ class LitertLmEmbedder(
             signature = signature,
         )
         val measured = try {
-            (opened.embed(listOf(" ")).firstOrNull()
+            (opened.embed(listOf(probeText)).firstOrNull()
                 ?: throw IllegalStateException("the embedding engine returned nothing")).also { probe ->
                 // A probe that comes back with NaN/Inf is a failed load, not a valid one: the
                 // engine would keep returning poison for everything, and nothing downstream is
                 // allowed to store it. Failing here lets [load] fall through to the CPU retry.
+                // The probe must look like real traffic: a single space passes on a 740M under
+                // the GPU delegate while genuine Chinese text already returns NaN (measured
+                // 2026-10-18, SM8750), so callers hand in a prefixed, realistic sentence.
                 require(probe.all { it.isFinite() }) {
                     "the embedding engine's probe vector contains NaN/Inf; " +
                         "the model file is corrupt or this backend cannot run it"

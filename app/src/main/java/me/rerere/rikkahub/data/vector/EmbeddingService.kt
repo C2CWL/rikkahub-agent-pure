@@ -361,6 +361,11 @@ class EmbeddingService(
             path = request.file!!.absolutePath,
             signature = request.signature!!,
             backend = request.accelerator!!,
+            // The probe must mimic the real indexing load: with a bare space the 740M passes
+            // on the GPU delegate and only returns NaN once genuine Chinese text shows up at
+            // index time (verified 2026-10-18). A prefixed, realistic sentence makes the
+            // load-time probe fail there instead, so the engine falls back to the CPU.
+            probeText = entry.documentPrefix + LITERT_PROBE_TEXT,
         )
         return ActiveModel(
             fileName = request.fileName,
@@ -535,3 +540,14 @@ class EmbeddingService(
         activeKey = null
     }
 }
+
+/**
+ * Realistic load-time probe text for `.litertlm` models, handed to the engine prefixed with
+ * the catalogue's document prefix. A bare space is not enough: the 740M build passes a space
+ * probe under the GPU delegate yet returns NaN for genuine Chinese text at index time
+ * (measured 2026-10-18, SM8750), which used to surface as three dead indexes instead of a
+ * CPU fallback. This sentence is long, CJK-heavy and mixed-language on purpose.
+ */
+private const val LITERT_PROBE_TEXT =
+    "语义索引让助手能够按意义检索记忆、文件与对话：即使关键词不同，相关内容也能被找到。" +
+        "Semantic indexing lets the assistant retrieve by meaning rather than by keyword."
