@@ -675,8 +675,9 @@
   <string name="setting_display_page_enable_message_generation_haptic_effect_title">اهتزاز توليد الرسائل</string>
   <string name="setting_display_page_font_size_preview">في الرابعة صباحًا، رأيت أزهار البيغونيا لا تزال مستيقظة. كثيرًا ما أكون هكذا — مستلقيًا مستيقظًا وحدي في الليل الهادئ، أفكّر: لو أن أحدًا يفكّر فيّ في هذه اللحظة، لكان ذلك رائعًا.</string>
   <string name="setting_display_page_font_size_title">حجم خط الدردشة</string>
-  <string name="setting_display_page_global_font_title">الخط العام</string>
-  <string name="setting_display_page_global_font_desc">استخدام خط الدردشة المحدد أيضًا في واجهة التطبيق بالكامل. لا تأثير له عندما يكون خط الدردشة افتراضيًا.</string>
+  <string name="setting_display_page_ui_font_family_title">خط الواجهة</string>
+  <string name="setting_display_page_ui_font_family_desc">الخط المستخدم في واجهة التطبيق خارج رسائل الدردشة. تستمر رسائل الدردشة في استخدام خط الدردشة.</string>
+  <string name="setting_display_page_ui_custom_font_title">خط واجهة مخصص</string>
   <string name="setting_display_page_ui_font_scale_title">حجم خط الواجهة</string>
   <string name="setting_display_page_ui_font_scale_desc">يغيّر حجم النص في التطبيق بالكامل (فوق حجم خط النظام). لا تتغير مسافات التخطيط.</string>
   <string name="setting_display_page_live_update_notification">إشعار التحديث المباشر</string>

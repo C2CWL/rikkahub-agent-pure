@@ -1225,8 +1225,11 @@ data class DisplaySetting(
     val chatFontFamily: ChatFontFamily = ChatFontFamily.DEFAULT,
     val chatCustomFontPath: String = "",
     val chatCustomFontName: String = "",
-    // Off by default: when on, the chosen chat font also becomes the app-wide typography font.
-    val applyChatFontGlobally: Boolean = false,
+    // App-wide UI font, independent of the chat font (which keeps applying to chat content).
+    // DEFAULT = system font = previous behaviour. A custom file lives in fonts/ui_font.* (backed up with fonts/).
+    val uiFontFamily: ChatFontFamily = ChatFontFamily.DEFAULT,
+    val uiCustomFontPath: String = "",
+    val uiCustomFontName: String = "",
     // App-wide UI text scale (multiplies the system font scale); 1.0 = unchanged. See FontScale.
     val uiFontScale: Float = 1.0f,
     val enableVolumeKeyScroll: Boolean = false,

@@ -12,20 +12,16 @@ import androidx.compose.ui.unit.Density
 import me.rerere.rikkahub.data.datastore.DisplaySetting
 
 /**
- * The app typography: [Typography] unchanged, or — when
- * [DisplaySetting.applyChatFontGlobally] is on and a non-default chat font is chosen — every
- * baseline and emphasized style with that font family. Reuses the chat font import/storage.
+ * The app typography: [Typography] unchanged, or every baseline and emphasized style with the
+ * UI font ([DisplaySetting.uiFontFamily]) when one is chosen. Independent of the chat font,
+ * which chat content keeps applying on top through [ChatFontProvider].
  */
 @Composable
 fun rememberAppTypography(displaySetting: DisplaySetting): Typography {
     val context = LocalContext.current
-    val apply = FontScale.shouldApplyGlobalFont(
-        enabled = displaySetting.applyChatFontGlobally,
-        family = displaySetting.chatFontFamily,
-        customFontPath = displaySetting.chatCustomFontPath,
-    )
-    return remember(apply, displaySetting.chatFontFamily, displaySetting.chatCustomFontPath) {
-        if (apply) Typography.withFontFamily(displaySetting.resolveChatFontFamily(context)) else Typography
+    val apply = FontScale.shouldApplyUiFont(displaySetting.uiFontFamily, displaySetting.uiCustomFontPath)
+    return remember(apply, displaySetting.uiFontFamily, displaySetting.uiCustomFontPath) {
+        if (apply) Typography.withFontFamily(displaySetting.resolveUiFontFamily(context)) else Typography
     }
 }
 

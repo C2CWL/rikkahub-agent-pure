@@ -16,7 +16,7 @@ import kotlin.math.roundToInt
  */
 object FontScale {
     val CHAT_RANGE: ClosedFloatingPointRange<Float> = 0.5f..2.0f
-    val UI_RANGE: ClosedFloatingPointRange<Float> = 0.8f..1.5f
+    val UI_RANGE: ClosedFloatingPointRange<Float> = 0.5f..2.0f
     const val DEFAULT = 1.0f
 
     /** Round to a whole percent and clamp; NaN/∞ fall back to [DEFAULT] (clamped). */
@@ -49,11 +49,11 @@ object FontScale {
         systemFontScale * uiScale(storedUiScale)
 
     /**
-     * Whether the chat font should also become the app-wide typography font: only when the
-     * toggle is on and a non-default font is actually chosen (a custom font needs an imported file).
+     * Whether the UI font replaces the app typography font: only when a non-default font is
+     * chosen (a custom font also needs an imported file). DEFAULT keeps the stock typography.
      */
-    fun shouldApplyGlobalFont(enabled: Boolean, family: ChatFontFamily, customFontPath: String): Boolean =
-        enabled && when (family) {
+    fun shouldApplyUiFont(family: ChatFontFamily, customFontPath: String): Boolean =
+        when (family) {
             ChatFontFamily.DEFAULT -> false
             ChatFontFamily.CUSTOM -> customFontPath.isNotBlank()
             ChatFontFamily.SERIF, ChatFontFamily.MONOSPACE -> true

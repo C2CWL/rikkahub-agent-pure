@@ -15,7 +15,8 @@ class FontScaleTest {
     @Test
     fun `new settings default to off and unchanged scale`() {
         val d = DisplaySetting()
-        assertFalse(d.applyChatFontGlobally)
+        assertEquals(ChatFontFamily.DEFAULT, d.uiFontFamily)
+        assertEquals("", d.uiCustomFontPath)
         assertEquals(1.0f, d.uiFontScale, eps)
         assertEquals(1.0f, d.fontSizeRatio, eps)
     }
@@ -24,8 +25,9 @@ class FontScaleTest {
     fun `snap rounds to whole percent and clamps`() {
         assertEquals(0.87f, FontScale.snap(0.8712f, FontScale.CHAT_RANGE), eps)
         assertEquals(1.23f, FontScale.snap(1.2349f, FontScale.UI_RANGE), eps)
-        assertEquals(0.8f, FontScale.snap(0.1f, FontScale.UI_RANGE), eps)
-        assertEquals(1.5f, FontScale.snap(9f, FontScale.UI_RANGE), eps)
+        assertEquals(0.5f, FontScale.snap(0.1f, FontScale.UI_RANGE), eps)
+        assertEquals(2.0f, FontScale.snap(9f, FontScale.UI_RANGE), eps)
+        assertEquals(1.73f, FontScale.snap(1.7312f, FontScale.UI_RANGE), eps)
         assertEquals(1.0f, FontScale.snap(Float.NaN, FontScale.UI_RANGE), eps)
     }
 
@@ -42,7 +44,9 @@ class FontScaleTest {
         assertEquals(1.2f, FontScale.parsePercent(" 120 ", FontScale.UI_RANGE)!!, eps)
         assertEquals(0.95f, FontScale.parsePercent("95%", FontScale.UI_RANGE)!!, eps)
         assertEquals(2.0f, FontScale.parsePercent("500", FontScale.CHAT_RANGE)!!, eps)
-        assertEquals(0.8f, FontScale.parsePercent("10", FontScale.UI_RANGE)!!, eps)
+        assertEquals(0.5f, FontScale.parsePercent("10", FontScale.UI_RANGE)!!, eps)
+        assertEquals(1.8f, FontScale.parsePercent("180", FontScale.UI_RANGE)!!, eps)
+        assertEquals(2.0f, FontScale.parsePercent("999", FontScale.UI_RANGE)!!, eps)
     }
 
     @Test
@@ -57,17 +61,18 @@ class FontScaleTest {
     fun `ui scale multiplies the system font scale and clamps corrupt values`() {
         assertEquals(1.3f, FontScale.effectiveFontScale(1.3f, 1.0f), eps)
         assertEquals(1.56f, FontScale.effectiveFontScale(1.3f, 1.2f), eps)
-        assertEquals(1.5f, FontScale.effectiveFontScale(1.0f, 7f), eps)
+        assertEquals(2.0f, FontScale.effectiveFontScale(1.0f, 7f), eps)
+        assertEquals(0.5f, FontScale.effectiveFontScale(1.0f, 0.2f), eps)
         assertEquals(1.0f, FontScale.effectiveFontScale(1.0f, Float.NaN), eps)
     }
 
     @Test
-    fun `global font applies only when enabled and a font is chosen`() {
-        assertFalse(FontScale.shouldApplyGlobalFont(false, ChatFontFamily.SERIF, ""))
-        assertFalse(FontScale.shouldApplyGlobalFont(true, ChatFontFamily.DEFAULT, ""))
-        assertFalse(FontScale.shouldApplyGlobalFont(true, ChatFontFamily.CUSTOM, ""))
-        assertTrue(FontScale.shouldApplyGlobalFont(true, ChatFontFamily.CUSTOM, "fonts/chat_font.ttf"))
-        assertTrue(FontScale.shouldApplyGlobalFont(true, ChatFontFamily.SERIF, ""))
-        assertTrue(FontScale.shouldApplyGlobalFont(true, ChatFontFamily.MONOSPACE, ""))
+    fun `ui font applies only when a non-default font is chosen`() {
+        assertFalse(FontScale.shouldApplyUiFont(ChatFontFamily.DEFAULT, ""))
+        assertFalse(FontScale.shouldApplyUiFont(ChatFontFamily.DEFAULT, "fonts/ui_font.1.ttf"))
+        assertFalse(FontScale.shouldApplyUiFont(ChatFontFamily.CUSTOM, ""))
+        assertTrue(FontScale.shouldApplyUiFont(ChatFontFamily.CUSTOM, "fonts/ui_font.1.ttf"))
+        assertTrue(FontScale.shouldApplyUiFont(ChatFontFamily.SERIF, ""))
+        assertTrue(FontScale.shouldApplyUiFont(ChatFontFamily.MONOSPACE, ""))
     }
 }

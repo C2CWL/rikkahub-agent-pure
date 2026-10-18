@@ -787,8 +787,9 @@
   <string name="setting_display_page_enable_message_generation_haptic_effect_title">Message Generation Haptic Effect</string>
   <string name="setting_display_page_font_size_preview">At four in the morning, I saw the begonia flowers still awake. I am often like this — lying awake alone in the quiet night, thinking: if someone is thinking of me at this moment, that would be wonderful.</string>
   <string name="setting_display_page_font_size_title">Chat Font Size</string>
-  <string name="setting_display_page_global_font_title">Global Font</string>
-  <string name="setting_display_page_global_font_desc">Also use the chosen chat font for the whole app interface. Has no effect while the chat font is Default.</string>
+  <string name="setting_display_page_ui_font_family_title">UI Font</string>
+  <string name="setting_display_page_ui_font_family_desc">Font for the app interface outside chat messages. Chat messages keep using the chat font.</string>
+  <string name="setting_display_page_ui_custom_font_title">Custom UI Font</string>
   <string name="setting_display_page_ui_font_scale_title">UI Font Size</string>
   <string name="setting_display_page_ui_font_scale_desc">Scales text across the whole app (on top of the system font size). Layout spacing is unchanged.</string>
   <string name="setting_display_page_live_update_notification">Live Update Notification</string>

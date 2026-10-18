@@ -57,6 +57,7 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.ui.theme.FontScale
 import me.rerere.rikkahub.ui.theme.rememberChatFontFamily
+import me.rerere.rikkahub.ui.theme.resolveUiFontFamily
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import java.io.File
@@ -70,6 +71,9 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
     val toaster = LocalToaster.current
     val scope = rememberCoroutineScope()
     val chatFontFamily = rememberChatFontFamily(displaySetting)
+    val uiFontFamily = remember(displaySetting.uiFontFamily, displaySetting.uiCustomFontPath) {
+        displaySetting.resolveUiFontFamily(context)
+    }
 
     fun updateDisplaySetting(setting: DisplaySetting) {
         displaySetting = setting
@@ -85,7 +89,7 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    importCustomChatFontInternal(context, uri)
+                    importCustomChatFontInternal(context, uri, CHAT_FONT_PREFIX)
                 }
             }.onSuccess { importedFont ->
                 updateDisplaySetting(
@@ -93,6 +97,30 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                         chatFontFamily = ChatFontFamily.CUSTOM,
                         chatCustomFontPath = importedFont.relativePath,
                         chatCustomFontName = importedFont.displayName,
+                    )
+                )
+                toaster.show(importSuccessMsg, type = ToastType.Success)
+            }.onFailure { error ->
+                toaster.show(importFailedMsg.format(error.message.orEmpty()), type = ToastType.Error)
+            }
+        }
+    }
+
+    val uiFontPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    importCustomChatFontInternal(context, uri, UI_FONT_PREFIX)
+                }
+            }.onSuccess { importedFont ->
+                updateDisplaySetting(
+                    displaySetting.copy(
+                        uiFontFamily = ChatFontFamily.CUSTOM,
+                        uiCustomFontPath = importedFont.relativePath,
+                        uiCustomFontName = importedFont.displayName,
                     )
                 )
                 toaster.show(importSuccessMsg, type = ToastType.Success)
@@ -321,16 +349,80 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     item(
-                        headlineContent = { Text(stringResource(R.string.setting_display_page_global_font_title)) },
-                        supportingContent = { Text(stringResource(R.string.setting_display_page_global_font_desc)) },
-                        trailingContent = {
-                            Switch(
-                                checked = displaySetting.applyChatFontGlobally,
-                                onCheckedChange = {
-                                    updateDisplaySetting(displaySetting.copy(applyChatFontGlobally = it))
+                        headlineContent = { Text(stringResource(R.string.setting_display_page_ui_font_family_title)) },
+                        supportingContent = {
+                            Column {
+                                Text(stringResource(R.string.setting_display_page_ui_font_family_desc))
+                                Select(
+                                    options = ChatFontFamily.entries,
+                                    selectedOption = displaySetting.uiFontFamily,
+                                    onOptionSelected = { family ->
+                                        if (family == ChatFontFamily.CUSTOM && displaySetting.uiCustomFontPath.isBlank()) {
+                                            uiFontPickerLauncher.launch(CustomFontMimeTypesUI)
+                                        } else {
+                                            updateDisplaySetting(displaySetting.copy(uiFontFamily = family))
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .padding(top = 4.dp)
+                                        .fillMaxWidth(),
+                                    optionToString = { it.labelUI() },
+                                    optionLeading = { family ->
+                                        Text(
+                                            text = "Aa",
+                                            fontFamily = family.toFontFamilyUI(uiFontFamily),
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_display_page_ui_custom_font_title)) },
+                        supportingContent = {
+                            Text(
+                                if (displaySetting.uiCustomFontName.isNotBlank()) {
+                                    displaySetting.uiCustomFontName
+                                } else {
+                                    stringResource(R.string.setting_display_page_custom_font_not_imported)
                                 }
                             )
                         },
+                        trailingContent = {
+                            Row {
+                                IconButton(
+                                    onClick = { uiFontPickerLauncher.launch(CustomFontMimeTypesUI) }
+                                ) {
+                                    Icon(
+                                        HugeIcons.FileImport,
+                                        contentDescription = stringResource(
+                                            R.string.setting_display_page_custom_font_import
+                                        )
+                                    )
+                                }
+                                if (displaySetting.uiCustomFontPath.isNotBlank()) {
+                                    IconButton(
+                                        onClick = {
+                                            deleteCustomChatFontInternal(context, displaySetting.uiCustomFontPath)
+                                            updateDisplaySetting(
+                                                displaySetting.copy(
+                                                    uiFontFamily = ChatFontFamily.DEFAULT,
+                                                    uiCustomFontPath = "",
+                                                    uiCustomFontName = "",
+                                                )
+                                            )
+                                        }
+                                    ) {
+                                        Icon(
+                                            HugeIcons.Delete02,
+                                            contentDescription = stringResource(
+                                                R.string.setting_display_page_custom_font_remove
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_font_size_title)) },
@@ -452,15 +544,20 @@ private fun ChatFontFamily.toFontFamilyUI(customFontFamily: FontFamily): FontFam
     ChatFontFamily.CUSTOM -> customFontFamily
 }
 
-private fun importCustomChatFontInternal(context: Context, uri: Uri): ImportedChatFontUI {
+// Chat and UI fonts are stored side by side in fonts/ (archived by the FONTS backup item) and
+// never replace each other: each import only swaps files with its own prefix.
+private const val CHAT_FONT_PREFIX = "chat_font"
+private const val UI_FONT_PREFIX = "ui_font"
+
+private fun importCustomChatFontInternal(context: Context, uri: Uri, prefix: String): ImportedChatFontUI {
     val displayName = FileUtils.getFileNameFromUri(context, uri)?.takeIf { it.isNotBlank() } ?: "custom_font"
     val extension = displayName.substringAfterLast('.', "")
         .lowercase()
         .takeIf { it in CustomFontExtensionsUI }
         ?: "ttf"
     val fontDir = File(context.filesDir, FileFolders.FONTS).apply { mkdirs() }
-    val targetFile = File(fontDir, "chat_font.${System.currentTimeMillis()}.$extension")
-    val tempFile = File(fontDir, "chat_font_import.tmp")
+    val targetFile = File(fontDir, "$prefix.${System.currentTimeMillis()}.$extension")
+    val tempFile = File(fontDir, "${prefix}_import.tmp")
 
     try {
         tempFile.delete()
@@ -476,7 +573,7 @@ private fun importCustomChatFontInternal(context: Context, uri: Uri): ImportedCh
             throw IllegalArgumentException(error.message ?: "Invalid font file", error)
         }
 
-        replaceCustomChatFontInternal(fontDir, tempFile, targetFile)
+        replaceCustomChatFontInternal(fontDir, tempFile, targetFile, prefix)
     } catch (error: Throwable) {
         tempFile.delete()
         throw error
@@ -487,9 +584,9 @@ private fun importCustomChatFontInternal(context: Context, uri: Uri): ImportedCh
     return ImportedChatFontUI(relativePath = relativePath, displayName = displayName)
 }
 
-private fun replaceCustomChatFontInternal(fontDir: File, tempFile: File, targetFile: File) {
+private fun replaceCustomChatFontInternal(fontDir: File, tempFile: File, targetFile: File, prefix: String) {
     val existingFiles = fontDir.listFiles { file ->
-        file.isFile && file.name.startsWith("chat_font.") && file != tempFile
+        file.isFile && file.name.startsWith("$prefix.") && file != tempFile
     }?.toList().orEmpty()
     val backups = existingFiles.map { file ->
         file to File(fontDir, "previous_${file.name}").also { it.delete() }
