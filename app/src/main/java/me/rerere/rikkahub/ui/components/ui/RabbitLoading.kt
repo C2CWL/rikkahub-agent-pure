@@ -10,14 +10,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.LoadingIndicatorStyle
+import me.rerere.rikkahub.data.datastore.effectiveLoadingIndicatorStyle
 import me.rerere.rikkahub.ui.context.LocalSettings
 
 @Composable
 fun RabbitLoadingIndicator(modifier: Modifier = Modifier) {
-    val useAppIconStyleLoadingIndicator = LocalSettings.current.displaySetting.useAppIconStyleLoadingIndicator
+    val style = LocalSettings.current.displaySetting.effectiveLoadingIndicatorStyle
     val primaryColor = MaterialTheme.colorScheme.primary.toArgb()
 
-    if (useAppIconStyleLoadingIndicator) {
+    if (style == LoadingIndicatorStyle.SPARKLE) {
+        SparkleLoadingIndicator(modifier = modifier)
+    } else if (style == LoadingIndicatorStyle.SHIMMER) {
+        ShimmerBar(modifier = modifier)
+    } else if (style == LoadingIndicatorStyle.APP_ICON) {
         AndroidView(
             modifier = modifier,
             factory = { context ->

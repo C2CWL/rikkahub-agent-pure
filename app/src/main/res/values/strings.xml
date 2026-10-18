@@ -3069,4 +3069,12 @@ HARDLINE protections still apply: rm -rf /, mkfs, shutdown / reboot, dd to block
   <string name="setting_sponsor_alipay_desc">Scan the QR code with Alipay</string>
   <string name="setting_sponsor_qr_hint">Screenshot this code, then scan it in the app above. Thank you!</string>
   <string name="setting_sponsor_qr_close">Close</string>
+  <string name="setting_display_page_loading_indicator_style_title">Loading indicator style</string>
+  <string name="setting_display_page_loading_indicator_style_desc">What shows under your message while the assistant is thinking</string>
+  <string name="setting_display_page_loading_indicator_style_default">Default</string>
+  <string name="setting_display_page_loading_indicator_style_app_icon">App icon</string>
+  <string name="setting_display_page_loading_indicator_style_shimmer">Shimmer</string>
+  <string name="chat_loading_sparkle_replying">Replying</string>
+  <string name="setting_display_page_loading_indicator_style_sparkle">Sparkle</string>
+  <string name="chat_loading_shimmer_thinking">Thinking…</string>
 </resources>

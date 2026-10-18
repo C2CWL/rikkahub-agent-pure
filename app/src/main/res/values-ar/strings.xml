@@ -2108,4 +2108,12 @@
   <string name="table">جدول</string>
   <string name="chat_page_continuing">انقطع الاتصال — يتم متابعة الرد (%1$d/%2$d)</string>
   <string name="chat_page_subagents_running">الوكلاء الفرعيون قيد التشغيل: %1$d · %2$s</string>
+  <string name="setting_display_page_loading_indicator_style_title">نمط مؤشر التحميل</string>
+  <string name="setting_display_page_loading_indicator_style_desc">ما يظهر أسفل رسالتك أثناء تفكير المساعد</string>
+  <string name="setting_display_page_loading_indicator_style_default">افتراضي</string>
+  <string name="setting_display_page_loading_indicator_style_app_icon">أيقونة التطبيق</string>
+  <string name="setting_display_page_loading_indicator_style_shimmer">وميض</string>
+  <string name="chat_loading_sparkle_replying">جارٍ الرد</string>
+  <string name="setting_display_page_loading_indicator_style_sparkle">بريق</string>
+  <string name="chat_loading_shimmer_thinking">جارٍ التفكير…</string>
 </resources>

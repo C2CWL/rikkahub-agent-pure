@@ -91,7 +91,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.LoadingIndicatorStyle
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.effectiveLoadingIndicatorStyle
 import me.rerere.rikkahub.data.ai.AssistantResolver
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
@@ -101,6 +103,9 @@ import me.rerere.rikkahub.ui.components.ui.bounceOverscroll
 import me.rerere.rikkahub.ui.components.ui.ErrorCardsDisplay
 import me.rerere.rikkahub.ui.components.ui.ListSelectableItem
 import me.rerere.rikkahub.ui.components.ui.RabbitLoadingIndicator
+import me.rerere.rikkahub.ui.components.ui.ShimmerThinkingLabel
+import me.rerere.rikkahub.ui.components.ui.SparkleThinkingRow
+import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.ui.hooks.ImeLazyListAutoScroller
 import me.rerere.rikkahub.ui.theme.ChatFontProvider
@@ -416,7 +421,24 @@ private fun ChatListNormal(
 
             if (loading) {
                 item(LoadingIndicatorKey) {
-                    Row(
+                    val indicatorStyle = LocalSettings.current.displaySetting.effectiveLoadingIndicatorStyle
+                    if (indicatorStyle == LoadingIndicatorStyle.SHIMMER) {
+                        // The label is the indicator: the live processing status, else "Thinking…".
+                        ShimmerThinkingLabel(
+                            modifier = Modifier.padding(8.dp),
+                            text = processingStatus,
+                        )
+                    } else if (indicatorStyle == LoadingIndicatorStyle.SPARKLE) {
+                        // Left-aligned where the reply text starts. Being the list's last item, it
+                        // stays below the newest content as the reply grows, and goes when it ends.
+                        SparkleThinkingRow(
+                            modifier = Modifier
+                                .animateItem() // fades out when the reply finishes
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            text = processingStatus,
+                        )
+                    } else Row(
                         modifier = Modifier.padding(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
