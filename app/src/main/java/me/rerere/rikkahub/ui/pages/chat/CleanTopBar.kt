@@ -46,7 +46,7 @@ import org.koin.androidx.compose.koinViewModel
  * "Clean layout" top bar (DisplaySetting.cleanLayout, off by default).
  *
  * Flat: no title plate, no glass discs behind the buttons. The conversation title is one line
- * and, like the regular bar, a small grey subtitle under it reads "assistant / model / N token"
+ * and, like the regular bar, a small grey subtitle under it reads "assistant / model / N tokens"
  * (same token aggregation as the regular bar, see [conversationUsedTokens]). Only the
  * "assistant / model" part may ellipsize; the token count is its own text and always shows,
  * compacted per locale ([cleanTopBarTokenText]). Taps do the same as the regular bar: the title

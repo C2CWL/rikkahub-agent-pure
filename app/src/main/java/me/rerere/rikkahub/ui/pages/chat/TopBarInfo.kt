@@ -24,19 +24,25 @@ internal fun conversationUsedTokens(turnFooters: Map<String, TurnFooter>, conver
 internal fun usedTokensOrFallback(ledgerTokens: Long, fallback: () -> Long): Long =
     if (ledgerTokens > 0L) ledgerTokens else fallback()
 
-/** "Assistant / Model / N token", the subtitle line of both chat top bars. */
+/** "Assistant / Model / N tokens", the subtitle line of the regular chat top bar. */
 internal fun topBarSubtitle(assistantName: String, modelName: String, usedTokens: Long): String =
-    "$assistantName / $modelName / $usedTokens token"
+    "$assistantName / $modelName / $usedTokens ${tokenUnit(usedTokens)}"
 
 /**
- * Token part of the clean-layout subtitle, " / N token", kept as its own text so a long model
+ * The unit word after a token count: "token" for exactly one, "tokens" otherwise (0, 2, and
+ * every 万 / 亿 / K value). The word stays English in every locale, as before.
+ */
+internal fun tokenUnit(count: Long): String = if (count == 1L) "token" else "tokens"
+
+/**
+ * Token part of the clean-layout subtitle, " / N tokens", kept as its own text so a long model
  * name cannot ellipsize the count away. Chinese locales count in 万 / 亿 ([formatTokensChinese],
  * 萬 / 億 when [traditional]); others use the compact K / M form of the statistics page
  * ([formatCompactTokens]).
  */
 internal fun cleanTopBarTokenText(usedTokens: Long, chinese: Boolean, traditional: Boolean = false): String {
     val count = if (chinese) formatTokensChinese(usedTokens, traditional) else formatCompactTokens(usedTokens)
-    return " / $count token"
+    return " / $count ${tokenUnit(usedTokens)}"
 }
 
 /** Whether [locale] reads Chinese, and whether in traditional characters (zh-TW, zh-HK, zh-Hant). */

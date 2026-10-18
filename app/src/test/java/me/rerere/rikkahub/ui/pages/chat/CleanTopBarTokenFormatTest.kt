@@ -58,9 +58,15 @@ class CleanTopBarTokenFormatTest {
 
     @Test
     fun `token text keeps the unit word and uses compact form outside chinese`() {
-        assertEquals(" / 14.38万 token", cleanTopBarTokenText(143_793L, chinese = true))
-        assertEquals(" / 29.2K token", cleanTopBarTokenText(29_200L, chinese = false))
-        assertEquals(" / 512 token", cleanTopBarTokenText(512L, chinese = false))
-        assertEquals(" / 512 token", cleanTopBarTokenText(512L, chinese = true))
+        assertEquals(" / 14.38万 tokens", cleanTopBarTokenText(143_793L, chinese = true))
+        assertEquals(" / 217.78万 tokens", cleanTopBarTokenText(2_177_838L, chinese = true))
+        assertEquals(" / 1亿 tokens", cleanTopBarTokenText(100_000_000L, chinese = true))
+        assertEquals(" / 14.38萬 tokens", cleanTopBarTokenText(143_793L, chinese = true, traditional = true))
+        assertEquals(" / 29.2K tokens", cleanTopBarTokenText(29_200L, chinese = false))
+        assertEquals(" / 512 tokens", cleanTopBarTokenText(512L, chinese = false))
+        assertEquals(" / 9876 tokens", cleanTopBarTokenText(9876L, chinese = true))
+        assertEquals(" / 0 tokens", cleanTopBarTokenText(0L, chinese = true))
+        assertEquals(" / 1 token", cleanTopBarTokenText(1L, chinese = true))
+        assertEquals(" / 1 token", cleanTopBarTokenText(1L, chinese = false))
     }
 }
