@@ -87,8 +87,8 @@ import me.rerere.rikkahub.data.usage.TurnFooter
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
+import me.rerere.rikkahub.data.datastore.resolveChatModel
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
@@ -371,7 +371,7 @@ private fun ChatPageContent(
         onAttachmentAdded = { showFilesSheet = false },
     )
     val allowAudioVideoAttachments =
-        setting.getCurrentChatModel()?.findProvider(setting.providers) is ProviderSetting.Google
+        currentChatModel?.findProvider(setting.providers) is ProviderSetting.Google
 
     val completionProviders = remember(assistant.workspaceId, conversation.workspaceCwd, workspaceRepository) {
         assistant.workspaceId?.let { workspaceId ->
@@ -388,7 +388,7 @@ private fun ChatPageContent(
     // Model and search live on the input bar (model chip, search icon). The handlers stay here.
     val onUpdateSearchMode: (SearchMode) -> Unit = { mode ->
         val current = setting.getCurrentAssistant()
-        val model = setting.getCurrentChatModel()
+        val model = currentChatModel
         vm.updateSettings(
             setting.copy(
                 assistants = setting.assistants.map { assistant ->
@@ -456,6 +456,9 @@ private fun ChatPageContent(
                         vm.stopGeneration()
                     },
                     onSendClick = {
+                        // Settings.dummy() is still standing in for the real settings: nothing
+                        // resolves yet, so do nothing (the draft stays) rather than misreport.
+                        if (setting.init) return@ChatInput
                         if (currentChatModel == null) {
                             toaster.show(
                                 context.getString(R.string.chat_select_model_first),
@@ -878,7 +881,7 @@ private fun TopBar(
                         else -> Modifier
                     },
                 ) {
-                    val model = settings.getCurrentChatModel()
+                    val model = settings.resolveChatModel(conversation.chatModelId, conversation.assistantId)
                     Text(
                         text = conversation.title.ifBlank { stringResource(R.string.chat_page_new_chat) },
                         maxLines = 1,
