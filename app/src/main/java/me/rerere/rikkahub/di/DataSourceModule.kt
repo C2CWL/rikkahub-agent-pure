@@ -13,6 +13,8 @@ import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.AIRequestInterceptor
 import me.rerere.rikkahub.data.ai.RequestLoggingInterceptor
+import me.rerere.rikkahub.data.mission.MissionEngine
+import me.rerere.rikkahub.data.mission.MissionRepository
 import me.rerere.rikkahub.data.ai.transformers.AssistantTemplateLoader
 import me.rerere.rikkahub.data.ai.GenerationLoop
 import me.rerere.rikkahub.data.ai.TranslationHandler
@@ -284,6 +286,12 @@ val dataSourceModule = module {
     // there is no DI-cycle risk here.
     single { get<AppDatabase>().agentRunDao() }
     single { AgentRunRepository(get()) }
+
+    // Workbench: mission ledger + engine. The engine tracks conversation-bound missions,
+    // records artifacts written by file tools, and mirrors sub-agent state into the timeline.
+    single { get<AppDatabase>().missionDao() }
+    single { MissionRepository(get()) }
+    single { MissionEngine(repository = get(), subAgentRegistry = get(), appScope = get<AppScope>()) }
     single { AgentRunBootRecovery(context = get(), repository = get()) }
     single {
         OrphanedReasoningRecovery(

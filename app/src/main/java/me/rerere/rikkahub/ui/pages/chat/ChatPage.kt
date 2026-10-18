@@ -34,6 +34,7 @@ import androidx.compose.material3.adaptive.currentWindowDpSize
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -53,6 +54,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -78,6 +84,7 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.LeftToRightListBullet
 import me.rerere.hugeicons.stroke.Menu03
 import me.rerere.hugeicons.stroke.MessageAdd01
+import me.rerere.hugeicons.stroke.Rocket01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.costguards.TokenBudgetTracker
 import me.rerere.rikkahub.data.usage.TurnFooter
@@ -93,6 +100,7 @@ import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.ui.pages.workbench.WorkbenchDrawerContent
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.FilesPicker
 import me.rerere.rikkahub.ui.components.ai.SearchMode
@@ -145,6 +153,10 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
         .ifBlank { null }
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    // Workbench: a second modal drawer mirrored to the right edge (via RTL) hosting the
+    // mission workbench. Gestures stay disabled while closed — the custom right-edge swipe
+    // below is the only opener, so it never fights the conversation drawer or message list.
+    val workbenchDrawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     // Shared Haze state between the chat page and the drawer: the page marks its background +
     // message list as the blur source (hazeSource), so the drawer's glass panel refracts the
     // page sitting behind it instead of showing an opaque block.
@@ -227,7 +239,38 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
         }
     }
 
-    when {
+    BackHandler(enabled = workbenchDrawerState.isOpen) {
+        scope.launch { workbenchDrawerState.close() }
+    }
+
+    // Outer drawer hosting the workbench, mirrored to the right edge via RTL layout direction;
+    // the inner conversation drawer keeps its native left-edge behavior untouched.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        ModalNavigationDrawer(
+            drawerState = workbenchDrawerState,
+            gesturesEnabled = workbenchDrawerState.isOpen,
+            drawerContent = {
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    WorkbenchDrawerContent(
+                        onNavigateDetail = { missionId ->
+                            scope.launch { workbenchDrawerState.close() }
+                            navController.navigate(Screen.MissionDetail(missionId))
+                        },
+                        currentConversationId = conversation.id.toString(),
+                    )
+                }
+            },
+        ) {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .workbenchRightEdgeSwipe(
+                            enabled = !workbenchDrawerState.isOpen,
+                            onOpen = { scope.launch { workbenchDrawerState.open() } },
+                        ),
+                ) {
+                    when {
         isBigScreen -> {
             PermanentNavigationDrawer(
                 drawerContent = {
@@ -258,6 +301,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                     errors = errors,
                     onDismissError = { vm.dismissError(it) },
                     onClearAllErrors = { vm.clearAllErrors() },
+                    onOpenWorkbench = { scope.launch { workbenchDrawerState.open() } },
                 )
             }
         }
@@ -293,10 +337,15 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                     errors = errors,
                     onDismissError = { vm.dismissError(it) },
                     onClearAllErrors = { vm.clearAllErrors() },
+                    onOpenWorkbench = { scope.launch { workbenchDrawerState.open() } },
                 )
             }
             BackHandler(drawerState.isOpen) {
                 scope.launch { drawerState.close() }
+            }
+        }
+                    }
+                }
             }
         }
     }
@@ -356,6 +405,7 @@ private fun ChatPageContent(
     errors: List<ChatError>,
     onDismissError: (Uuid) -> Unit,
     onClearAllErrors: () -> Unit,
+    onOpenWorkbench: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
@@ -699,6 +749,7 @@ private fun ChatPageContent(
                         onClickMenu = {
                             previewMode = !previewMode
                         },
+                        onOpenWorkbench = onOpenWorkbench,
                     )
                 }
             }
@@ -811,6 +862,7 @@ private fun TopBar(
     previewMode: Boolean,
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
+    onOpenWorkbench: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
@@ -920,6 +972,15 @@ private fun TopBar(
             ) {
                 Icon(HugeIcons.MessageAdd01, stringResource(R.string.chat_page_new_message))
             }
+
+            GlassTopBarButton(
+                onClick = {
+                    onOpenWorkbench()
+                },
+                hazeState = hazeState,
+            ) {
+                Icon(HugeIcons.Rocket01, stringResource(R.string.workbench_title))
+            }
         },
     )
 }
@@ -954,6 +1015,29 @@ private fun GlassTopBarButton(
             contentAlignment = Alignment.Center,
         ) {
             content()
+        }
+    }
+}
+
+/**
+ * Workbench right-edge swipe opener. The conversation drawer's own edge gesture owns the left
+ * edge; this watches drags that START in the right 40% of the screen and only consumes once the
+ * finger is clearly travelling left (the direction that reveals the right-side drawer), so
+ * vertical scrolling and horizontally-scrollable content inside the chat stay unaffected.
+ */
+private fun Modifier.workbenchRightEdgeSwipe(
+    enabled: Boolean,
+    onOpen: () -> Unit,
+): Modifier = this.pointerInput(enabled) {
+    if (!enabled) return@pointerInput
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        if (down.position.x < size.width * 0.6f) return@awaitEachGesture
+        val drag = awaitHorizontalTouchSlopOrCancellation(down.id) { change, over ->
+            if (over < 0f) change.consume()
+        }
+        if (drag != null && drag.isConsumed) {
+            onOpen()
         }
     }
 }
