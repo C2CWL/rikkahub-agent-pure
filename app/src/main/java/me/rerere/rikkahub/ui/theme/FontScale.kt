@@ -44,9 +44,31 @@ object FontScale {
         return stored.coerceIn(UI_RANGE)
     }
 
-    /** `Density.fontScale` with the UI font scale applied on top of the system font scale. */
-    fun effectiveFontScale(systemFontScale: Float, storedUiScale: Float): Float =
-        systemFontScale * uiScale(storedUiScale)
+    /**
+     * Upper bound for system font scale × UI font scale. Layout stays in `dp`, so beyond this text
+     * clips and overlaps. A system scale that is already larger is kept as is (the cap never
+     * shrinks text below what the system asks for); it only stops the UI slider from adding more.
+     */
+    const val MAX_EFFECTIVE_FONT_SCALE = 2.0f
+
+    /**
+     * `Density.fontScale` with the UI font scale applied on top of the system font scale, capped
+     * at [MAX_EFFECTIVE_FONT_SCALE] (or the system scale, if that is larger). At the default UI
+     * scale of 1.0 this is exactly the system scale.
+     */
+    fun effectiveFontScale(systemFontScale: Float, storedUiScale: Float): Float {
+        val cap = maxOf(MAX_EFFECTIVE_FONT_SCALE, systemFontScale)
+        return (systemFontScale * uiScale(storedUiScale)).coerceAtMost(cap)
+    }
+
+    /**
+     * Size factor for a preview line showing what [candidateUiScale] would look like, relative to
+     * the font scale currently applied ([currentFontScale]). 1 when nothing would change.
+     */
+    fun previewRatio(systemFontScale: Float, currentFontScale: Float, candidateUiScale: Float): Float {
+        if (currentFontScale <= 0f || currentFontScale.isNaN()) return 1f
+        return effectiveFontScale(systemFontScale, candidateUiScale) / currentFontScale
+    }
 
     /**
      * Whether the UI font replaces the app typography font: only when a non-default font is

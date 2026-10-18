@@ -66,6 +66,9 @@ import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import java.io.File
 import kotlin.math.roundToInt
+import androidx.compose.ui.platform.LocalDensity
+import me.rerere.rikkahub.ui.theme.LocalBaseFontScale
+import androidx.compose.material3.MaterialTheme
 
 @Composable
 fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
@@ -476,15 +479,17 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                     },
                                     valueRange = FontScale.CHAT_RANGE,
                                     title = stringResource(R.string.setting_display_page_font_size_title),
-                                )
-                                MarkdownBlock(
-                                    content = stringResource(R.string.setting_display_page_font_size_preview),
-                                    style = LocalTextStyle.current.copy(
-                                        fontSize = LocalTextStyle.current.fontSize * displaySetting.fontSizeRatio,
-                                        lineHeight = LocalTextStyle.current.lineHeight * displaySetting.fontSizeRatio,
-                                        fontFamily = chatFontFamily
+                                ) { ratio ->
+                                    // Follows the thumb while dragging; the setting is saved on release.
+                                    MarkdownBlock(
+                                        content = stringResource(R.string.setting_display_page_font_size_preview),
+                                        style = LocalTextStyle.current.copy(
+                                            fontSize = LocalTextStyle.current.fontSize * ratio,
+                                            lineHeight = LocalTextStyle.current.lineHeight * ratio,
+                                            fontFamily = chatFontFamily
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
                     )
@@ -500,7 +505,21 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                     },
                                     valueRange = FontScale.UI_RANGE,
                                     title = stringResource(R.string.setting_display_page_ui_font_scale_title),
-                                )
+                                ) { candidate ->
+                                    // The app already renders at the saved scale; scale the sample
+                                    // by candidate/current so it shows the size the thumb points at.
+                                    val currentScale = LocalDensity.current.fontScale
+                                    val systemScale = LocalBaseFontScale.current ?: currentScale
+                                    val ratio = FontScale.previewRatio(systemScale, currentScale, candidate)
+                                    val sample = MaterialTheme.typography.bodyMedium
+                                    Text(
+                                        text = stringResource(R.string.setting_display_page_ui_font_scale_preview),
+                                        style = sample.copy(
+                                            fontSize = sample.fontSize * ratio,
+                                            lineHeight = sample.lineHeight * ratio,
+                                        ),
+                                    )
+                                }
                             }
                         }
                     )

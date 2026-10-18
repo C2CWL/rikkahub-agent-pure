@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.components.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardActions
@@ -28,6 +29,10 @@ import me.rerere.rikkahub.ui.theme.FontScale
  * A continuous (1% granularity, no step dots) ratio slider with an editable percentage: tapping
  * the "NN%" label opens a small integer input. Typed values are clamped to [valueRange]; input
  * that is not an integer percentage is ignored and the current value is kept.
+ *
+ * While the thumb is dragged the value lives in local state (and drives [preview]); it is handed
+ * to [onValueChange] once, on release, so a drag does not persist settings — and re-lay out the
+ * whole app — on every 1% tick.
  */
 @Composable
 fun PercentSlider(
@@ -36,25 +41,34 @@ fun PercentSlider(
     valueRange: ClosedFloatingPointRange<Float>,
     title: String,
     modifier: Modifier = Modifier,
+    preview: (@Composable (Float) -> Unit)? = null,
 ) {
     var editing by remember { mutableStateOf(false) }
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Slider(
-            value = value.coerceIn(valueRange),
-            onValueChange = { raw ->
-                val snapped = FontScale.snap(raw, valueRange)
-                if (snapped != value) onValueChange(snapped)
-            },
-            valueRange = valueRange,
-            modifier = Modifier.weight(1f),
-        )
-        TextButton(onClick = { editing = true }) {
-            Text(text = "${FontScale.percentLabel(value)}%")
+    // Non-null only while dragging.
+    var dragValue by remember { mutableStateOf<Float?>(null) }
+    val shown = dragValue ?: value
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Slider(
+                value = shown.coerceIn(valueRange),
+                onValueChange = { raw -> dragValue = FontScale.snap(raw, valueRange) },
+                onValueChangeFinished = {
+                    val released = dragValue
+                    dragValue = null
+                    if (released != null && released != value) onValueChange(released)
+                },
+                valueRange = valueRange,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = { editing = true }) {
+                Text(text = "${FontScale.percentLabel(shown)}%")
+            }
         }
+        preview?.invoke(shown)
     }
     if (editing) {
         var input by remember { mutableStateOf(FontScale.percentLabel(value).toString()) }

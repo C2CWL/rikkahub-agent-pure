@@ -758,7 +758,8 @@
   <string name="setting_display_page_ui_font_family_desc">用于聊天消息以外的应用界面。聊天消息仍使用聊天字体。</string>
   <string name="setting_display_page_ui_custom_font_title">自定义界面字体</string>
   <string name="setting_display_page_ui_font_scale_title">界面字体大小</string>
-  <string name="setting_display_page_ui_font_scale_desc">缩放整个应用的文字（在系统字体大小基础上），不改变布局间距。</string>
+  <string name="setting_display_page_ui_font_scale_desc">缩放整个应用的文字（在系统字体大小基础上），与系统字体大小叠加后最高为 200%。不改变布局间距。</string>
+  <string name="setting_display_page_ui_font_scale_preview">此大小的示例文字</string>
   <string name="setting_display_page_live_update_notification">实时更新通知</string>
   <string name="setting_display_page_live_update_notification_desc">在生成消息时显示实时通知更新（Android 15+）</string>
   <string name="setting_display_page_message_jumper_position_desc">将消息导航移到左侧</string>
