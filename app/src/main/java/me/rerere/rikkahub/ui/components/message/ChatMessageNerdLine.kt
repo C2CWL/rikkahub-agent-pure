@@ -29,8 +29,6 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.usage.TurnFooter
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.pages.chat.CHAT_WALLPAPER_HAZE_KEY
-import me.rerere.rikkahub.ui.pages.chat.UsageLineInk
-import me.rerere.rikkahub.ui.pages.chat.usageLineStyle
 
 /**
  * 显示消息的技术统计信息（如 token 使用量）。
@@ -56,8 +54,7 @@ fun ChatMessageNerdLine(
     if (!settings.showTokenUsage || turnFooter == null) return
 
     // Frosted only where Haze blurs for real (API 31+) and the page gave us its haze state.
-    val frosted = hazeState != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val style = usageLineStyle(photoShown, frosted)
+    val style = usageLineStyle(photoShown, sdkInt = Build.VERSION.SDK_INT, hasHazeState = hazeState != null)
     val ink = when (style.ink) {
         UsageLineInk.ON_SURFACE -> MaterialTheme.colorScheme.onSurface
         UsageLineInk.SECONDARY -> MaterialTheme.colorScheme.secondary
@@ -67,15 +64,15 @@ fun ChatMessageNerdLine(
     ProvideTextStyle(MaterialTheme.typography.labelSmall.copy(color = color)) {
         CompositionLocalProvider(LocalContentColor provides color) {
             val plateAlpha = style.plateAlpha
-            val blurDp = style.blurRadiusDp
-            if (plateAlpha != null && blurDp != null && hazeState != null) {
+            val frost = style.frost
+            if (frost != null && hazeState != null) {
                 val shape = RoundedCornerShape(12.dp)
                 val backdrop = MaterialTheme.colorScheme.background
-                val tint = MaterialTheme.colorScheme.surface.copy(alpha = plateAlpha)
-                val blurStyle = remember(backdrop, tint, blurDp) {
+                val tint = MaterialTheme.colorScheme.surface.copy(alpha = frost.tintAlpha)
+                val blurStyle = remember(backdrop, tint, frost.blurRadiusDp) {
                     HazeBlurStyle {
                         backgroundColor(backdrop)
-                        blurRadius(blurDp.dp)
+                        blurRadius(frost.blurRadiusDp.dp)
                         colorEffects(listOf(HazeColorEffect.tint(tint)))
                     }
                 }

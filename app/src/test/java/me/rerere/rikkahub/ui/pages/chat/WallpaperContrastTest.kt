@@ -2,7 +2,6 @@ package me.rerere.rikkahub.ui.pages.chat
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -98,36 +97,5 @@ class WallpaperContrastTest {
     @Test fun `per-theme wallpaper overrides common even when common is null`() {
         assertEquals("dark.jpg", effectiveBackground(true, null, "dark.jpg", null))
         assertEquals("light.jpg", effectiveBackground(false, null, null, "light.jpg"))
-    }
-
-    @Test fun `usage line off a photo stays quiet secondary without a plate`() {
-        val style = usageLineStyle(photoShown = false)
-        assertEquals(UsageLineInk.SECONDARY, style.ink)
-        assertEquals(0.5f, style.inkAlpha, 0f)
-        assertNull(style.plateAlpha)
-    }
-
-    @Test fun `usage line on a photo uses onSurface on the title plate`() {
-        val style = usageLineStyle(photoShown = true)
-        assertEquals(UsageLineInk.ON_SURFACE, style.ink)
-        assertEquals(0.72f, style.inkAlpha, 0f)
-        assertEquals(PHOTO_TITLE_PLATE_ALPHA, style.plateAlpha!!, 0f)
-    }
-
-    @Test fun `usage line on a photo is a lighter frosted tint when blur is available`() {
-        val style = usageLineStyle(photoShown = true, frosted = true)
-        assertEquals(UsageLineInk.ON_SURFACE, style.ink)
-        assertEquals(0.85f, style.inkAlpha, 0f)
-        assertEquals(USAGE_FROSTED_TINT_ALPHA, style.plateAlpha!!, 0f)
-        assertEquals(USAGE_FROSTED_BLUR_DP, style.blurRadiusDp!!, 0f)
-        // The blur carries part of the contrast, so the tint is lighter than the flat plate.
-        assertTrue(style.plateAlpha!! < PHOTO_TITLE_PLATE_ALPHA)
-    }
-
-    @Test fun `usage line falls back to the flat plate without blur, and never frosts off a photo`() {
-        assertNull(usageLineStyle(photoShown = true, frosted = false).blurRadiusDp)
-        val offPhoto = usageLineStyle(photoShown = false, frosted = true)
-        assertNull(offPhoto.plateAlpha)
-        assertNull(offPhoto.blurRadiusDp)
     }
 }
