@@ -1,4 +1,5 @@
 package me.rerere.rikkahub.data.usage
+import me.rerere.rikkahub.runtime.usage.UsagePurpose
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity

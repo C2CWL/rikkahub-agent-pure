@@ -1,11 +1,11 @@
 package me.rerere.rikkahub.data.policy
+import me.rerere.rikkahub.runtime.tools.ApprovalMode
 
 import kotlinx.coroutines.runBlocking
 import me.rerere.rikkahub.costguards.TokenBudgetTracker
-import me.rerere.rikkahub.data.ai.tools.ApprovalMode
 import me.rerere.rikkahub.data.ai.tools.HeadlessConversations
 import me.rerere.rikkahub.data.ai.tools.ToolApprovalAllowList
-import me.rerere.rikkahub.data.ai.tools.ToolApprovalDefaults
+import me.rerere.rikkahub.runtime.tools.ToolApprovalDefaults
 import me.rerere.rikkahub.data.preferences.ToolApprovalSnapshot
 import org.junit.After
 import org.junit.Assert.assertEquals
