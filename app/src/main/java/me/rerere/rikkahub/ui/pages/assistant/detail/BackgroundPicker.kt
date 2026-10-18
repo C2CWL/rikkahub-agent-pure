@@ -31,6 +31,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.model.AssistantBackgroundMode
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import org.koin.compose.koinInject
@@ -260,5 +261,52 @@ fun BackgroundPicker(
                 }
             }
         )
+    }
+}
+
+/**
+ * Which wallpaper the chat uses once per-theme ones exist: follow the theme (per-theme
+ * slot, else common — the default), or always the common one.
+ */
+@Composable
+fun BackgroundModeSelector(
+    modifier: Modifier = Modifier,
+    mode: AssistantBackgroundMode,
+    onModeChange: (AssistantBackgroundMode) -> Unit,
+) {
+    FormItem(
+        modifier = modifier,
+        label = {
+            Text(stringResource(R.string.assistant_page_background_mode))
+        },
+        description = {
+            Text(
+                stringResource(
+                    when (mode) {
+                        AssistantBackgroundMode.AUTO -> R.string.assistant_page_background_mode_auto_desc
+                        AssistantBackgroundMode.GENERAL -> R.string.assistant_page_background_mode_general_desc
+                    }
+                )
+            )
+        }
+    ) {
+        SingleChoiceSegmentedButtonRow(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            SegmentedButton(
+                selected = mode == AssistantBackgroundMode.AUTO,
+                onClick = { onModeChange(AssistantBackgroundMode.AUTO) },
+                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+            ) {
+                Text(stringResource(R.string.assistant_page_background_mode_auto))
+            }
+            SegmentedButton(
+                selected = mode == AssistantBackgroundMode.GENERAL,
+                onClick = { onModeChange(AssistantBackgroundMode.GENERAL) },
+                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+            ) {
+                Text(stringResource(R.string.assistant_page_background_mode_general))
+            }
+        }
     }
 }

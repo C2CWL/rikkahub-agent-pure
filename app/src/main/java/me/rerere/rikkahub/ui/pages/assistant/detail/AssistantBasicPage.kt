@@ -856,6 +856,16 @@ internal fun AssistantBasicContent(
                         )
                     }
                 )
+
+                // Only meaningful once a per-theme wallpaper exists to compete with the common one.
+                if (assistant.darkBackground != null || assistant.lightBackground != null) {
+                    HorizontalDivider()
+                    BackgroundModeSelector(
+                        modifier = Modifier.padding(8.dp),
+                        mode = assistant.backgroundMode,
+                        onModeChange = { onUpdate(assistant.copy(backgroundMode = it)) },
+                    )
+                }
             }
 
             if (!assistant.useGradientBackground && (assistant.background != null || assistant.darkBackground != null || assistant.lightBackground != null)) {
