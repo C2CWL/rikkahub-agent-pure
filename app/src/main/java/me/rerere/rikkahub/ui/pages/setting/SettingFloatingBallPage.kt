@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import androidx.compose.foundation.BorderStroke
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -238,6 +239,9 @@ fun SettingFloatingBallPage(vm: SettingVM = koinViewModel()) {
                                         }
                                     )
                                 },
+                                // Blend into the card: same container colour, hairline for affordance.
+                                containerColor = CustomColors.listItemColors.containerColor,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                                 modifier = Modifier.width(150.dp),
                             )
                         },
