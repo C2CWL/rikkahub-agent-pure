@@ -51,9 +51,11 @@ import me.rerere.rikkahub.data.files.FileUtils
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.CardGroup
+import me.rerere.rikkahub.ui.components.ui.PercentSlider
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.CustomColors
+import me.rerere.rikkahub.ui.theme.FontScale
 import me.rerere.rikkahub.ui.theme.rememberChatFontFamily
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
@@ -319,25 +321,29 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     item(
+                        headlineContent = { Text(stringResource(R.string.setting_display_page_global_font_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_global_font_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.applyChatFontGlobally,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(applyChatFontGlobally = it))
+                                }
+                            )
+                        },
+                    )
+                    item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_font_size_title)) },
                         supportingContent = {
                             Column {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    Slider(
-                                        value = displaySetting.fontSizeRatio,
-                                        onValueChange = {
-                                            updateDisplaySetting(displaySetting.copy(fontSizeRatio = it))
-                                        },
-                                        valueRange = 0.5f..2f,
-                                        steps = 11,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Text(text = "${(displaySetting.fontSizeRatio * 100).toInt()}%")
-                                }
+                                PercentSlider(
+                                    value = displaySetting.fontSizeRatio,
+                                    onValueChange = {
+                                        updateDisplaySetting(displaySetting.copy(fontSizeRatio = it))
+                                    },
+                                    valueRange = FontScale.CHAT_RANGE,
+                                    title = stringResource(R.string.setting_display_page_font_size_title),
+                                )
                                 MarkdownBlock(
                                     content = stringResource(R.string.setting_display_page_font_size_preview),
                                     style = LocalTextStyle.current.copy(
@@ -345,6 +351,22 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                         lineHeight = LocalTextStyle.current.lineHeight * displaySetting.fontSizeRatio,
                                         fontFamily = chatFontFamily
                                     )
+                                )
+                            }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_display_page_ui_font_scale_title)) },
+                        supportingContent = {
+                            Column {
+                                Text(stringResource(R.string.setting_display_page_ui_font_scale_desc))
+                                PercentSlider(
+                                    value = FontScale.uiScale(displaySetting.uiFontScale),
+                                    onValueChange = {
+                                        updateDisplaySetting(displaySetting.copy(uiFontScale = it))
+                                    },
+                                    valueRange = FontScale.UI_RANGE,
+                                    title = stringResource(R.string.setting_display_page_ui_font_scale_title),
                                 )
                             }
                         }

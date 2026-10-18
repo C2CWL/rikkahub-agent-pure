@@ -653,6 +653,10 @@
   <string name="setting_display_page_enable_message_generation_haptic_effect_title">Тактильный эффект при генерации сообщения</string>
   <string name="setting_display_page_font_size_preview">Это **пример** текста чата</string>
   <string name="setting_display_page_font_size_title">Размер шрифта чата</string>
+  <string name="setting_display_page_global_font_title">Глобальный шрифт</string>
+  <string name="setting_display_page_global_font_desc">Использовать выбранный шрифт чата во всём интерфейсе приложения. Не действует, если шрифт чата — по умолчанию.</string>
+  <string name="setting_display_page_ui_font_scale_title">Размер шрифта интерфейса</string>
+  <string name="setting_display_page_ui_font_scale_desc">Масштабирует текст во всём приложении (поверх системного размера шрифта). Отступы макета не меняются.</string>
   <string name="setting_display_page_live_update_notification">Уведомление об обновлении в реальном времени</string>
   <string name="setting_display_page_live_update_notification_desc">Показывать уведомления об обновлениях в реальном времени во время генерации сообщений (Android 15+)</string>
   <string name="setting_display_page_message_jumper_position_desc">Переместить переходчик сообщений влево</string>
