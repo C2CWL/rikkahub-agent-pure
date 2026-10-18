@@ -98,17 +98,35 @@ internal class CapsuleBallView(context: Context) : FrameLayout(context) {
         cornerRadius = dp(HANDLE_WIDTH_DP).toFloat() / 2f
     }
 
-    private val handle = View(context).apply {
-        background = handleBackground
+    /**
+     * The tucked handle: a [HANDLE_TOUCH_DP]-wide touch strip that only paints a
+     * [HANDLE_WIDTH_DP]-wide pill against the screen edge it sits on ([handleOnRight]).
+     */
+    private val handle = object : View(context) {
+        override fun onDraw(canvas: Canvas) {
+            val pill = dp(HANDLE_WIDTH_DP).coerceAtMost(width)
+            val left = if (handleOnRight) width - pill else 0
+            handleBackground.setBounds(left, 0, left + pill, height)
+            handleBackground.draw(canvas)
+        }
+    }.apply {
         visibility = GONE
     }
+
+    /** Screen edge the tucked handle hugs; its pill is drawn on that side of the touch strip. */
+    var handleOnRight: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            handle.invalidate()
+        }
 
     init {
         clipToPadding = false
         clipChildren = false
         setPadding(shadowInset, shadowInset, shadowInset, shadowInset)
         addView(bar, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
-        addView(handle, LayoutParams(dp(HANDLE_WIDTH_DP), dp(HANDLE_HEIGHT_DP)))
+        addView(handle, LayoutParams(dp(HANDLE_TOUCH_DP), dp(HANDLE_HEIGHT_DP)))
     }
 
     /** Colours resolved by the service from the app theme (never hard-coded here). */
@@ -119,6 +137,7 @@ internal class CapsuleBallView(context: Context) : FrameLayout(context) {
         status.setTextColor(onSurfaceVariant)
         closeButton.glyphColor = onSurfaceVariant
         handleBackground.setColor(accent)
+        handle.invalidate()
         halo.accentColor = accent
     }
 
@@ -176,7 +195,11 @@ internal class CapsuleBallView(context: Context) : FrameLayout(context) {
         const val ICON_DP = 36f
         const val CLOSE_DP = 28f
         const val TITLE_MAX_WIDTH_DP = 150f
-        const val HANDLE_WIDTH_DP = 6f
+        /** Visible pill width; same as the round ball's handle. */
+        const val HANDLE_WIDTH_DP = HaloBallLook.HANDLE_WIDTH_DP
         const val HANDLE_HEIGHT_DP = 44f
+
+        /** On-screen touch strip of the tucked handle, wide enough to grab and drag out. */
+        const val HANDLE_TOUCH_DP = HaloBallLook.HANDLE_STRIP_DP
     }
 }

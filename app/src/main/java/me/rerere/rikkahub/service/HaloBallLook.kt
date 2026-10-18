@@ -29,11 +29,14 @@ internal object HaloBallLook {
     const val REST_BLOOM_ALPHA = 48
 
     /** The slim handle a tucked ball collapses into. */
-    const val HANDLE_WIDTH_DP = 6f
+    const val HANDLE_WIDTH_DP = 10f
     const val HANDLE_HEIGHT_DP = 44f
 
-    /** On-screen strip of the tucked window: the handle plus a little extra to hit with a thumb. */
-    const val HANDLE_STRIP_DP = 16f
+    /**
+     * On-screen strip of the tucked window: the visible handle plus room to grab it with a thumb
+     * and drag it out (the strip is also excluded from the system back gesture).
+     */
+    const val HANDLE_STRIP_DP = 30f
 
     /** [color] with its alpha replaced by [fraction] (0..1) of full opacity. */
     fun withAlphaFraction(color: Int, fraction: Float): Int {

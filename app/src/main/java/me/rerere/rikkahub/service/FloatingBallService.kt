@@ -14,6 +14,7 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -135,10 +136,15 @@ class FloatingBallService : Service(), KoinComponent {
          * Where a user-picked ball image lives. The app's private files dir needs no storage
          * permission and is wiped on uninstall, so a stale settings path can never leak data.
          */
-        fun iconFile(context: Context): File = File(context.filesDir, "floating_ball_icon")
+        /** A fresh file for a newly picked ball icon (see [FloatingBallIconFiles]). */
+        fun newIconFile(context: Context): File =
+            FloatingBallIconFiles.newFile(context.filesDir, System.currentTimeMillis())
 
         /** On-screen strip of a tucked ball: just the slim handle and a little touch room. */
         private const val TUCKED_STRIP_DP = HaloBallLook.HANDLE_STRIP_DP
+
+        /** Height cap of the edge-gesture exclusion around a tucked handle (system budget: 200dp per edge). */
+        private const val EDGE_EXCLUSION_MAX_DP = 120f
 
         /** Starts (or re-starts) the ball. Idempotent — a running service just re-shows its view. */
         fun start(context: Context) {
@@ -781,9 +787,12 @@ class FloatingBallService : Service(), KoinComponent {
                         _voiceHold.value = false
                         if (panelOpen) mainHandler.post { collapseBall() }
                     }
+                    // A cancelled gesture (e.g. taken by the system) is never a tap: it must not open
+                    // the panel. A drag still settles on an edge, and a ball woken by the touch stays out.
+                    val cancelled = event.actionMasked == MotionEvent.ACTION_CANCEL
                     when {
                         dragging -> snapToEdge(wm, view, params)
-                        !longPressFired && !startedHidden -> openQuickChat(voice = false)
+                        !cancelled && !longPressFired && !startedHidden -> openQuickChat(voice = false)
                     }
                     startedHidden = false
                     dragging = false
@@ -911,6 +920,26 @@ class FloatingBallService : Service(), KoinComponent {
         // Only the round ball has a handle; the capsule tucks via tuckCapsule() above.
         (view as? HaloBallView)?.setHandle(on = true, onRight = onRight)
         animateTo(view, params, wm, targetX, hiddenAlpha())
+        setEdgeGestureExclusion(view, width = size, height = view.height.takeIf { it > 0 } ?: params.height)
+    }
+
+    /**
+     * Keeps the system edge-back gesture off a tucked handle (API 29+), so a swipe from the edge
+     * reaches the ball and drags it out instead of being taken as "back" and cancelled. The rect
+     * is centred and capped at [EDGE_EXCLUSION_MAX_DP], under the system's per-edge budget
+     * (200dp); [clearEdgeGestureExclusion] removes it on wake.
+     */
+    private fun setEdgeGestureExclusion(view: View, width: Int, height: Int) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val max = (EDGE_EXCLUSION_MAX_DP * resources.displayMetrics.density).toInt()
+        val h = height.coerceIn(0, max)
+        val top = ((height - h) / 2).coerceAtLeast(0)
+        view.systemGestureExclusionRects = listOf(Rect(0, top, width.coerceAtLeast(0), top + h))
+    }
+
+    private fun clearEdgeGestureExclusion(view: View) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        view.systemGestureExclusionRects = emptyList()
     }
 
     /**
@@ -922,6 +951,7 @@ class FloatingBallService : Service(), KoinComponent {
         val view = ballView ?: return
         val params = ballParams ?: return
         val wm = getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
+        clearEdgeGestureExclusion(view)
         capsuleView?.let { capsule ->
             wakeCapsule(capsule, params, wm)
             return
@@ -961,13 +991,22 @@ class FloatingBallService : Service(), KoinComponent {
         val screenWidth = resources.displayMetrics.widthPixels
         val width = capsule.width.takeIf { it > 0 } ?: capsule.measuredCapsuleWidth()
         val onRight = params.x + width / 2 >= screenWidth / 2
+        capsule.handleOnRight = onRight
         capsule.handleMode = true
         syncWorking()
-        val handleWidth = (CapsuleBallView.HANDLE_WIDTH_DP * resources.displayMetrics.density).toInt()
+        val density = resources.displayMetrics.density
+        // The handle's touch strip is wider than the visible pill, which is drawn flush with the edge.
+        val strip = (CapsuleBallView.HANDLE_TOUCH_DP * density).toInt()
         // The root keeps a shadow inset on every side; push it past the edge so the handle is flush.
-        params.x = if (onRight) screenWidth - handleWidth - capsule.shadowInset else -capsule.shadowInset
+        params.x = if (onRight) screenWidth - strip - capsule.shadowInset else -capsule.shadowInset
         runCatching { wm.updateViewLayout(capsule, params) }
         capsule.animate().alpha(hiddenAlpha()).setDuration(IDLE_ANIM_MS).start()
+        // Sizes from the handle layout: the view is only re-laid out on the next frame.
+        setEdgeGestureExclusion(
+            capsule,
+            width = strip + 2 * capsule.shadowInset,
+            height = (CapsuleBallView.HANDLE_HEIGHT_DP * density).toInt() + 2 * capsule.shadowInset,
+        )
     }
 
     /** Capsule wake: back to the full bar at its remembered edge, at full opacity, at once. */

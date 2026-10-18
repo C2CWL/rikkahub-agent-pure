@@ -63,6 +63,7 @@ import me.rerere.rikkahub.service.HaloBallLook
 import me.rerere.rikkahub.service.HaloBallView
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.FloatingBallStyle
+import me.rerere.rikkahub.service.FloatingBallIconFiles
 import me.rerere.rikkahub.service.FloatingBallService
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
@@ -124,16 +125,19 @@ fun SettingFloatingBallPage(vm: SettingVM = koinViewModel()) {
     ) { uri: Uri? ->
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
-            val target = FloatingBallService.iconFile(context)
+            // A new file name per pick: the path itself changes, so the settings flow emits and
+            // the running ball reloads the picture (the same path would be de-duplicated away).
+            val target = FloatingBallService.newIconFile(context)
             val copied = withContext(Dispatchers.IO) {
                 runCatching {
                     context.contentResolver.openInputStream(uri)?.use { input ->
                         target.outputStream().use { output -> input.copyTo(output) }
                     } ?: error("Cannot open $uri")
-                }.isSuccess
+                }.onFailure { runCatching { target.delete() } }.isSuccess
             }
             if (copied) {
                 vm.updateSettings { it.copy(floatingBallIconPath = target.absolutePath) }
+                withContext(Dispatchers.IO) { FloatingBallIconFiles.deleteStale(context.filesDir, keep = target) }
             }
         }
     }
@@ -402,10 +406,11 @@ fun SettingFloatingBallPage(vm: SettingVM = koinViewModel()) {
                         Button(
                             onClick = {
                                 showIconDialog = false
-                                val target = FloatingBallService.iconFile(context)
                                 scope.launch {
-                                    withContext(Dispatchers.IO) { runCatching { target.delete() } }
                                     vm.updateSettings { it.copy(floatingBallIconPath = "") }
+                                    withContext(Dispatchers.IO) {
+                                        FloatingBallIconFiles.deleteStale(context.filesDir, keep = null)
+                                    }
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(),
