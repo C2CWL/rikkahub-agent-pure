@@ -722,6 +722,7 @@
   <string name="setting_display_page_auto_collapse_thinking_title">自动折叠思考</string>
   <string name="setting_display_page_thinking_steps_visible_desc">思考/工具步骤组折叠时保留最后几步可见，0 为只显示一行标题</string>
   <string name="setting_display_page_thinking_steps_visible_title">折叠时显示的步骤数</string>
+  <string name="setting_display_page_thinking_steps_visible_all">全部</string>
   <string name="setting_display_page_auto_play_tts_desc">助手消息生成完成后自动播放TTS</string>
   <string name="setting_display_page_auto_play_tts_title">生成后自动播放TTS</string>
   <string name="setting_display_page_chat_font_family_default">默认</string>

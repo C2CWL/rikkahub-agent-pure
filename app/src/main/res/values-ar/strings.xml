@@ -654,6 +654,7 @@
   <string name="setting_display_page_auto_collapse_thinking_title">طي التفكير تلقائيًا</string>
   <string name="setting_display_page_thinking_steps_visible_desc">عدد آخر خطوات التفكير والأدوات التي تبقى ظاهرة عند طي مجموعة الخطوات. 0 يعرض عنوانًا من سطر واحد فقط</string>
   <string name="setting_display_page_thinking_steps_visible_title">الخطوات الظاهرة في المجموعة المطوية</string>
+  <string name="setting_display_page_thinking_steps_visible_all">الكل</string>
   <string name="setting_display_page_auto_play_tts_desc">تشغيل تحويل النص إلى كلام تلقائيًا بعد اكتمال توليد رسالة المساعد</string>
   <string name="setting_display_page_auto_play_tts_title">تشغيل تحويل النص إلى كلام تلقائيًا بعد التوليد</string>
   <string name="setting_display_page_chat_font_family_default">افتراضي</string>

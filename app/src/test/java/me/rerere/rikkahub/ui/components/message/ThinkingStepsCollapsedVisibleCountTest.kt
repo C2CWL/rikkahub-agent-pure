@@ -44,4 +44,25 @@ class ThinkingStepsCollapsedVisibleCountTest {
             thinkingStepsCollapsedVisibleCount(99, isStreamingTail = false),
         )
     }
+
+    @Test
+    fun `all shows every step, finished or streaming`() {
+        assertEquals(Int.MAX_VALUE, thinkingStepsCollapsedVisibleCount(THINKING_STEPS_VISIBLE_ALL, isStreamingTail = false))
+        assertEquals(Int.MAX_VALUE, thinkingStepsCollapsedVisibleCount(THINKING_STEPS_VISIBLE_ALL, isStreamingTail = true))
+    }
+
+    @Test
+    fun `the slider's top stop maps to all and back`() {
+        val top = THINKING_STEPS_VISIBLE_MAX + 1
+        assertEquals(THINKING_STEPS_VISIBLE_ALL, thinkingStepsVisibleFromSlider(top))
+        assertEquals(top, thinkingStepsVisibleToSlider(THINKING_STEPS_VISIBLE_ALL))
+    }
+
+    @Test
+    fun `numeric slider stops round-trip`() {
+        for (n in 0..THINKING_STEPS_VISIBLE_MAX) {
+            assertEquals(n, thinkingStepsVisibleFromSlider(n))
+            assertEquals(n, thinkingStepsVisibleToSlider(n))
+        }
+    }
 }

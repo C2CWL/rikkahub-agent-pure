@@ -632,6 +632,7 @@
   <string name="setting_display_page_auto_collapse_thinking_title">思考を自動折りたたむ</string>
   <string name="setting_display_page_thinking_steps_visible_desc">思考／ツールのステップグループを折りたたんだときに表示する直近のステップ数。0 の場合は 1 行の見出しのみ表示</string>
   <string name="setting_display_page_thinking_steps_visible_title">折りたたみ時に表示するステップ数</string>
+  <string name="setting_display_page_thinking_steps_visible_all">すべて</string>
   <string name="setting_display_page_auto_play_tts_desc">アシスタントのメッセージ生成完了後にTTSを自動再生</string>
   <string name="setting_display_page_auto_play_tts_title">生成後にTTSを自動再生</string>
   <string name="setting_display_page_chat_font_family_default">デフォルト</string>
