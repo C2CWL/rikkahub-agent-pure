@@ -113,6 +113,9 @@ object LitertEmbeddingCatalog {
             repo = "litert-community/embeddinggemma-2-740m-litert-lm",
             // The plain file, for the same reason as above: the per-SoC `_Qualcomm_SM8750` build
             // is an NPU-only artefact and does not allocate its tensors on a CPU/GPU configuration.
+            // Note: on the GPU delegate this build passes a space probe but returns NaN for real
+            // CJK text (2026-10-18, SM8750); the realistic load-time probe in EmbeddingService
+            // is what keeps it on the CPU. Do not slim that probe back down.
             file = "embeddinggemma-2-740m.litertlm",
             // Read off the HuggingFace API on 2026-10-17; see the note on ENTRIES about exactness.
             sizeBytes = 484_622_336L,
