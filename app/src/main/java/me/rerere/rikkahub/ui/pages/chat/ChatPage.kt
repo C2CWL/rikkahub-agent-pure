@@ -682,7 +682,17 @@ private fun ChatPageContent(
                         .fillMaxWidth()
                         .onSizeChanged { topBarHeightPx = it.height },
                 ) {
-                    TopBar(
+                    if (setting.displaySetting.cleanLayout) {
+                        CleanTopBar(
+                            settings = setting,
+                            conversation = conversation,
+                            drawerState = drawerState,
+                            bigScreen = bigScreen,
+                            previewMode = previewMode,
+                            onClickMenu = { previewMode = !previewMode },
+                            onNewChat = { navigateToChatPage(navController) },
+                        )
+                    } else TopBar(
                         settings = setting,
                         conversation = conversation,
                         turnFooters = turnFooters,
