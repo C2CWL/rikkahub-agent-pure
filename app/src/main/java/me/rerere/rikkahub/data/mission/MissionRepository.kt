@@ -27,6 +27,18 @@ class MissionRepository(private val dao: MissionDao) {
 
     private val writeMutex = Mutex()
 
+    /**
+     * Monotonic clock for timeline events: rapid-fire logging within the same wall-clock
+     * millisecond must still order (and trim) deterministically, so every event timestamp is
+     * at least one tick after the previous one. Mission rows keep real wall time; only
+     * mission_events.created_at goes through this.
+     */
+    private val lastEventMs = java.util.concurrent.atomic.AtomicLong(0)
+
+    private fun nextEventMs(): Long = lastEventMs.updateAndGet { prev ->
+        maxOf(prev + 1, System.currentTimeMillis())
+    }
+
     fun observeAll(): Flow<List<MissionEntity>> = dao.observeAll()
 
     fun observeMission(id: String): Flow<MissionEntity?> = dao.observeMission(id)
@@ -103,7 +115,7 @@ class MissionRepository(private val dao: MissionDao) {
                         title = "${current.name} -> ${to.name}",
                         detail = note,
                         payloadJson = null,
-                        createdAt = now,
+                        createdAt = nextEventMs(),
                     )
                 )
                 dao.trimEvents(id)
@@ -152,7 +164,7 @@ class MissionRepository(private val dao: MissionDao) {
                         title = title,
                         detail = detail,
                         payloadJson = payloadJson,
-                        createdAt = System.currentTimeMillis(),
+                        createdAt = nextEventMs(),
                     )
                 )
                 dao.trimEvents(missionId)
@@ -194,7 +206,7 @@ class MissionRepository(private val dao: MissionDao) {
                                 put("sourceTool", sourceTool)
                             }
                         ),
-                        createdAt = now,
+                        createdAt = nextEventMs(),
                     )
                 )
                 dao.trimEvents(missionId)
