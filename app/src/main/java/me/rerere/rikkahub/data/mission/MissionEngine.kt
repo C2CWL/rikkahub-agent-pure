@@ -152,8 +152,9 @@ class MissionEngine(
      * [MissionRepository.findActiveByConversation] and backfills the cache.
      */
     suspend fun missionIdFor(conversationId: String): String? = runCatching {
-        bindings[conversationId] ?: repository.findActiveByConversation(conversationId)?.also { entity ->
+        bindings[conversationId] ?: repository.findActiveByConversation(conversationId)?.let { entity ->
             bindings[conversationId] = entity.id
+            entity.id
         }
     }.getOrNull()
 
