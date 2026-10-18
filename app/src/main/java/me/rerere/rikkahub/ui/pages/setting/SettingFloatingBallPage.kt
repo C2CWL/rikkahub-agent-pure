@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
@@ -25,9 +26,6 @@ import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -66,6 +64,7 @@ import me.rerere.rikkahub.data.datastore.FloatingBallStyle
 import me.rerere.rikkahub.service.FloatingBallService
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
+import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
@@ -222,33 +221,25 @@ fun SettingFloatingBallPage(vm: SettingVM = koinViewModel()) {
                             Text(stringResource(R.string.setting_floating_ball_style_title))
                         },
                         supportingContent = {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(stringResource(R.string.setting_floating_ball_style_desc))
-                                val styles = FloatingBallStyle.entries
-                                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                                    styles.forEachIndexed { index, style ->
-                                        SegmentedButton(
-                                            selected = settings.floatingBallStyle == style,
-                                            onClick = {
-                                                vm.updateSettings { it.copy(floatingBallStyle = style) }
-                                            },
-                                            shape = SegmentedButtonDefaults.itemShape(
-                                                index = index,
-                                                count = styles.size,
-                                            ),
-                                        ) {
-                                            Text(
-                                                stringResource(
-                                                    when (style) {
-                                                        FloatingBallStyle.ORIGINAL -> R.string.setting_floating_ball_style_original
-                                                        FloatingBallStyle.CAPSULE -> R.string.setting_floating_ball_style_capsule
-                                                    }
-                                                )
-                                            )
+                            Text(stringResource(R.string.setting_floating_ball_style_desc))
+                        },
+                        trailingContent = {
+                            Select(
+                                options = FloatingBallStyle.entries,
+                                selectedOption = settings.floatingBallStyle,
+                                onOptionSelected = { style ->
+                                    vm.updateSettings { it.copy(floatingBallStyle = style) }
+                                },
+                                optionToString = {
+                                    stringResource(
+                                        when (it) {
+                                            FloatingBallStyle.ORIGINAL -> R.string.setting_floating_ball_style_original
+                                            FloatingBallStyle.CAPSULE -> R.string.setting_floating_ball_style_capsule
                                         }
-                                    }
-                                }
-                            }
+                                    )
+                                },
+                                modifier = Modifier.width(150.dp),
+                            )
                         },
                     )
                     item(
