@@ -693,6 +693,14 @@
   <string name="setting_display_page_tts_only_read_quoted_title">引用部分のみTTSで読み上げ</string>
   <string name="setting_display_page_use_app_icon_style_loading_indicator_desc">デフォルトの円形読み込みインジケーターの代わりに、アプリアイコンのアニメーションを使用します</string>
   <string name="setting_display_page_use_app_icon_style_loading_indicator_title">アプリアイコン風の読み込みインジケーターを使用</string>
+  <string name="setting_display_page_loading_indicator_style_title">読み込みインジケーターのスタイル</string>
+  <string name="setting_display_page_loading_indicator_style_desc">アシスタントが考え中・生成中にメッセージの下に表示されるアニメーション</string>
+  <string name="setting_display_page_loading_indicator_style_default">デフォルト</string>
+  <string name="setting_display_page_loading_indicator_style_app_icon">アプリアイコン</string>
+  <string name="setting_display_page_loading_indicator_style_shimmer">シマー</string>
+  <string name="chat_loading_sparkle_replying">応答中</string>
+  <string name="setting_display_page_loading_indicator_style_sparkle">きらめき</string>
+  <string name="chat_loading_shimmer_thinking">考え中…</string>
   <string name="setting_display_page_volume_key_scroll_desc">音量キーでページをスクロール、電子ペーパー画面に最適</string>
   <string name="setting_display_page_volume_key_scroll_ratio">スクロロール量</string>
   <string name="setting_display_page_volume_key_scroll_title">音量キーでページスクロール</string>
@@ -1927,12 +1935,4 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
   <string name="workspace_detail_settings_save_failed">設定の保存に失敗しました</string>
   <string name="chat_page_continuing">接続が切れました — 返信の続きを生成中（%1$d/%2$d）</string>
   <string name="chat_page_subagents_running">サブエージェント %1$d 件実行中 · %2$s</string>
-  <string name="setting_display_page_loading_indicator_style_title">読み込みインジケーターのスタイル</string>
-  <string name="setting_display_page_loading_indicator_style_desc">アシスタントが考え中・生成中にメッセージの下に表示されるアニメーション</string>
-  <string name="setting_display_page_loading_indicator_style_default">デフォルト</string>
-  <string name="setting_display_page_loading_indicator_style_app_icon">アプリアイコン</string>
-  <string name="setting_display_page_loading_indicator_style_shimmer">シマー</string>
-  <string name="chat_loading_sparkle_replying">応答中</string>
-  <string name="setting_display_page_loading_indicator_style_sparkle">きらめき</string>
-  <string name="chat_loading_shimmer_thinking">考え中…</string>
 </resources>
