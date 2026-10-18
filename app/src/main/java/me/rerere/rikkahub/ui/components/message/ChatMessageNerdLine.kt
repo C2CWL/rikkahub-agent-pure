@@ -18,7 +18,8 @@ import androidx.compose.ui.unit.dp
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.usage.TurnFooter
 import me.rerere.rikkahub.ui.context.LocalSettings
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.pages.chat.UsageLineInk
+import me.rerere.rikkahub.ui.pages.chat.usageLineStyle
 
 /**
  * 显示消息的技术统计信息（如 token 使用量）。
@@ -42,26 +43,20 @@ fun ChatMessageNerdLine(
     // running there is simply nothing to draw.
     if (!settings.showTokenUsage || turnFooter == null) return
 
-    val darkTheme = LocalDarkMode.current
-    val needPlate = photoShown  // any photo (light or dark) benefits from a plate
-    // On a photo the usual secondary@0.5 can disappear into the image. Use a
-    // higher-contrast colour and let the plate carry the rest.
-    val color = if (photoShown) {
-        if (darkTheme) {
-            MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f)
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
-        }
-    } else {
-        MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)
+    val style = usageLineStyle(photoShown)
+    val ink = when (style.ink) {
+        UsageLineInk.ON_SURFACE -> MaterialTheme.colorScheme.onSurface
+        UsageLineInk.SECONDARY -> MaterialTheme.colorScheme.secondary
     }
+    val color = ink.copy(alpha = style.inkAlpha)
 
     ProvideTextStyle(MaterialTheme.typography.labelSmall.copy(color = color)) {
         CompositionLocalProvider(LocalContentColor provides color) {
-            if (needPlate) {
+            val plateAlpha = style.plateAlpha
+            if (plateAlpha != null) {
                 Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = plateAlpha),
                 ) {
                     TurnUsageLine(
                         footer = turnFooter,

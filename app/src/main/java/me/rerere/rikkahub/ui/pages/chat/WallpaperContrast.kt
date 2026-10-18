@@ -73,3 +73,24 @@ internal fun assistantTextNeedsPhotoPlate(
     photoShown: Boolean,
     showAssistantBubble: Boolean,
 ): Boolean = looseTextNeedsPhotoPlate(darkTheme, photoShown) && !showAssistantBubble
+
+/** Which theme colour the per-turn usage line under an assistant reply is drawn in. */
+internal enum class UsageLineInk { SECONDARY, ON_SURFACE }
+
+/**
+ * Usage line styling. [plateAlpha] is the `surface` plate behind the line, or null for none.
+ */
+internal data class UsageLineStyle(val ink: UsageLineInk, val inkAlpha: Float, val plateAlpha: Float?)
+
+/**
+ * Off a photo the line stays the quiet `secondary@0.5`. On a photo it follows the title
+ * subtitle: neutral onSurface text (a tinted `secondary` clashes with sky / sea / flower
+ * photos) on the title's plate, in both themes. The old `surface@0.55` plate let too much
+ * of a busy photo through.
+ */
+internal fun usageLineStyle(photoShown: Boolean): UsageLineStyle =
+    if (photoShown) {
+        UsageLineStyle(UsageLineInk.ON_SURFACE, inkAlpha = 0.72f, plateAlpha = PHOTO_TITLE_PLATE_ALPHA)
+    } else {
+        UsageLineStyle(UsageLineInk.SECONDARY, inkAlpha = 0.5f, plateAlpha = null)
+    }
