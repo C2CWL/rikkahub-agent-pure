@@ -31,6 +31,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -646,6 +647,9 @@ class GenerationLoop(
         // request is built. The callback may return a compacted request history; the returned
         // list is request-only and does not replace the conversation's original messages.
         onAfterToolExecution: suspend (List<UIMessage>) -> List<UIMessage>? = { null },
+        // Fired once per tool right after its result lands in `executedTools`. ChatService
+        // routes this into the MissionEngine so workbench missions can log artifacts.
+        onToolExecuted: (suspend (toolName: String, argsJson: String, outputJson: String) -> Unit)? = null,
         // Called immediately before every model request, including the request after a tool
         // result. ChatService uses this to reassert the foreground service before a background
         // continuation opens a new socket.
@@ -1316,6 +1320,11 @@ class GenerationLoop(
                                     maxTokens = assistant.toolResultMaxTokens,
                                 )
                             )
+                            onToolExecuted?.let { hook ->
+                                runCatching {
+                                    hook(markedTool.toolName, markedTool.input, result.toString().take(500))
+                                }
+                            }
                         }.onFailure {
                             // runCatching also captures CancellationException (e.g. the user
                             // pressed stop mid tool execution). That must propagate, not turn

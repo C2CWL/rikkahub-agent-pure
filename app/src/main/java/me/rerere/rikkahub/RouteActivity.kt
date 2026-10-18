@@ -569,6 +569,10 @@ class RouteActivity : ComponentActivity() {
                                 me.rerere.rikkahub.workflow.ui.WorkflowDetailScreen(workflowId = key.id)
                             }
 
+                            entry<Screen.MissionDetail> { key ->
+                                me.rerere.rikkahub.ui.pages.workbench.MissionDetailPage(missionId = key.id)
+                            }
+
                             entry<Screen.SettingScheduledJobs> {
                                 me.rerere.rikkahub.ui.pages.setting.scheduledjobs.ScheduledJobsScreen()
                             }
@@ -861,6 +865,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data class WorkflowDetail(val id: String) : Screen
+
+    @Serializable
+    data class MissionDetail(val id: String) : Screen
 
     @Serializable
     data object SettingScheduledJobs : Screen

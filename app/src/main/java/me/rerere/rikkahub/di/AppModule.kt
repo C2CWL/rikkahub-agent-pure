@@ -299,7 +299,8 @@ val appModule = module {
             memoryIndex = get(),
             toolVectors = get(),
             libraryIndex = get(),
-            conversationIndex = get()
+            conversationIndex = get(),
+            missionEngine = get()
         )
     }
 

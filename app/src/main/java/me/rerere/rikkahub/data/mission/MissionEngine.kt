@@ -1,0 +1,203 @@
+package me.rerere.rikkahub.data.mission
+
+import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import me.rerere.rikkahub.subagent.SubAgentRegistry
+import me.rerere.rikkahub.subagent.SubAgentRun
+import me.rerere.rikkahub.subagent.SubAgentStatus
+import java.util.concurrent.ConcurrentHashMap
+
+private const val TAG = "MissionEngine"
+
+/**
+ * Tools whose execution produces a file artifact that should be tracked on the
+ * bound mission's timeline. The [path] field is extracted from the tool's args
+ * JSON and recorded via [MissionRepository.attachArtifact].
+ */
+private val ARTIFACT_TOOLS = setOf(
+    "write_text_file",
+    "workspace_write_file",
+    "workspace_edit_file",
+)
+
+/**
+ * Workbench Mission engine — bridges the conversation / sub-agent lifecycle to
+ * [MissionRepository]'s timeline.
+ *
+ * Three responsibilities:
+ * 1. **Conversation binding** — maps a conversationId to a missionId in memory
+ *    (with DB fallback via [MissionRepository.findActiveByConversation]).
+ * 2. **Tool artifact tracking** — when a whitelisted file-writing tool executes,
+ *    extracts the path from the tool's args and attaches it to the bound mission.
+ * 3. **Sub-agent dispatch tracking** — collects [SubAgentRegistry.runs] and logs
+ *    SUBAGENT_DISPATCHED / SUBAGENT_FINISHED events for runs whose parent chat
+ *    has a bound mission.
+ *
+ * All public methods are wrapped in [runCatching] — this is observability
+ * infrastructure and must never break the generation loop.
+ *
+ * @param repository the mission data layer (Role A).
+ * @param subAgentRegistry the in-memory sub-agent run store.
+ * @param appScope the application-scoped coroutine scope for the init collector.
+ */
+class MissionEngine(
+    private val repository: MissionRepository,
+    private val subAgentRegistry: SubAgentRegistry,
+    private val appScope: CoroutineScope,
+) {
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    /** conversationId → missionId (in-memory binding cache). */
+    private val bindings = ConcurrentHashMap<String, String>()
+
+    /** "runId:status" pairs already processed, to prevent duplicate timeline events. */
+    private val seenRunStatuses = ConcurrentHashMap.newKeySet<String>()
+
+    init {
+        @Suppress("unused")
+        appScope.launch {
+            subAgentRegistry.runs.collect { runsMap ->
+                runsMap.values.forEach { run ->
+                    runCatching { processRun(run) }
+                        .onFailure { Log.w(TAG, "processRun failed for ${run.id}", it) }
+                }
+            }
+        }
+    }
+
+    /**
+     * Process a single [SubAgentRun] for timeline events. Only runs whose
+     * [SubAgentRun.parentChatId] has a bound mission are tracked.
+     *
+     * - First [SubAgentStatus.RUNNING] → log SUBAGENT_DISPATCHED.
+     * - First terminal status → log SUBAGENT_FINISHED (detail = result/error, first 200 chars).
+     *
+     * Deduplication via [seenRunStatuses] ensures each status transition is logged at most once.
+     */
+    private suspend fun processRun(run: SubAgentRun) {
+        val parentChatId = run.parentChatId ?: return
+        val missionId = missionIdFor(parentChatId) ?: return
+
+        val key = "${run.id}:${run.status}"
+        if (!seenRunStatuses.add(key)) return // already processed this run+status
+
+        when (run.status) {
+            SubAgentStatus.RUNNING -> {
+                repository.logEvent(
+                    missionId = missionId,
+                    type = MissionEventType.SUBAGENT_DISPATCHED,
+                    title = run.label,
+                )
+            }
+
+            SubAgentStatus.SUCCEEDED,
+            SubAgentStatus.FAILED,
+            SubAgentStatus.TIMED_OUT,
+            SubAgentStatus.CANCELLED -> {
+                val detail = run.result?.take(200) ?: run.error?.take(200)
+                repository.logEvent(
+                    missionId = missionId,
+                    type = MissionEventType.SUBAGENT_FINISHED,
+                    title = run.label,
+                    detail = detail,
+                )
+            }
+
+            SubAgentStatus.PENDING -> { /* no event — wait for RUNNING */ }
+        }
+    }
+
+    /**
+     * Bind a conversation to a mission. Stores the binding in memory and logs a
+     * NOTE event for audit. The [MissionEntity.conversationId] column is not
+     * directly updatable through the current [MissionRepository] API — missions
+     * created via [MissionRepository.create] with a conversationId are already
+     * persisted; this method handles the runtime binding for lookups.
+     */
+    suspend fun bindConversation(conversationId: String, missionId: String) {
+        runCatching {
+            bindings[conversationId] = missionId
+            repository.logEvent(
+                missionId = missionId,
+                type = MissionEventType.NOTE,
+                title = "Bound to conversation: $conversationId",
+            )
+        }.onFailure { Log.w(TAG, "bindConversation failed", it) }
+    }
+
+    /**
+     * Remove the conversation→mission binding from memory. Logs a NOTE event
+     * if a binding existed.
+     */
+    suspend fun unbindConversation(conversationId: String) {
+        runCatching {
+            val missionId = bindings.remove(conversationId)
+            if (missionId != null) {
+                repository.logEvent(
+                    missionId = missionId,
+                    type = MissionEventType.NOTE,
+                    title = "Unbound from conversation: $conversationId",
+                )
+            }
+        }.onFailure { Log.w(TAG, "unbindConversation failed", it) }
+    }
+
+    /**
+     * Resolve the missionId bound to [conversationId]. Checks the in-memory
+     * [bindings] map first; on miss, falls back to
+     * [MissionRepository.findActiveByConversation] and backfills the cache.
+     */
+    suspend fun missionIdFor(conversationId: String): String? = runCatching {
+        bindings[conversationId] ?: repository.findActiveByConversation(conversationId)?.let { entity ->
+            bindings[conversationId] = entity.id
+            entity.id
+        }
+    }.getOrNull()
+
+    /**
+     * Hook called after a tool executes. If the tool is in [ARTIFACT_TOOLS],
+     * extracts the `path` field from [argsJson] and attaches it as an artifact
+     * to the bound mission via [MissionRepository.attachArtifact].
+     */
+    suspend fun onToolExecuted(
+        conversationId: String,
+        toolName: String,
+        argsJson: String,
+        @Suppress("UNUSED_PARAMETER") outputJson: String,
+    ) {
+        runCatching {
+            if (toolName !in ARTIFACT_TOOLS) return@runCatching
+            val path = parsePath(argsJson) ?: return@runCatching
+            val missionId = missionIdFor(conversationId) ?: return@runCatching
+            repository.attachArtifact(missionId, path, toolName)
+        }.onFailure { Log.w(TAG, "onToolExecuted failed for $toolName", it) }
+    }
+
+    /**
+     * Hook called when a generation turn finishes. Logs a MILESTONE event on
+     * the bound mission's timeline.
+     */
+    suspend fun onGenerationFinished(conversationId: String) {
+        runCatching {
+            val missionId = missionIdFor(conversationId) ?: return@runCatching
+            repository.logEvent(
+                missionId = missionId,
+                type = MissionEventType.MILESTONE,
+                title = "Generation finished",
+            )
+        }.onFailure { Log.w(TAG, "onGenerationFinished failed", it) }
+    }
+
+    /**
+     * Extract the `path` field from a tool's args JSON string.
+     * Returns null if the JSON is invalid or has no `path` field.
+     */
+    private fun parsePath(argsJson: String): String? = runCatching {
+        val element = json.parseToJsonElement(argsJson.ifBlank { "{}" })
+        (element as? JsonObject)?.get("path")?.jsonPrimitive?.content
+    }.getOrNull()
+}

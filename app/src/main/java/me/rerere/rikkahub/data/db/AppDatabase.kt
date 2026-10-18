@@ -35,6 +35,9 @@ import me.rerere.rikkahub.data.db.entity.SshHostEntity
 import me.rerere.rikkahub.data.db.entity.TelegramChatEntity
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.db.migrations.Migration_16_17
+import me.rerere.rikkahub.data.mission.MissionDao
+import me.rerere.rikkahub.data.mission.MissionEntity
+import me.rerere.rikkahub.data.mission.MissionEventEntity
 import me.rerere.rikkahub.data.db.migrations.Migration_20_21
 import me.rerere.rikkahub.data.db.migrations.Migration_21_22
 import me.rerere.rikkahub.data.db.migrations.Migration_22_23
@@ -63,8 +66,10 @@ import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
         AgentRun::class,
         WorkspaceEntity::class,
         FolderEntity::class,
+        MissionEntity::class,
+        MissionEventEntity::class,
     ],
-    version = 31,
+    version = 32,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -113,6 +118,10 @@ import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
         // AppDatabaseFactory) instead of a plain auto-migration: a database restored from an
         // upstream 2.5.x backup can already carry this column, and an unconditional ADD COLUMN
         // crash-loops the app on every launch (issue #105).
+        // v32: the workbench Mission tables (missions + mission_events). Both are pure
+        // additions, so Room's auto-migration creates them outright; no backup can carry
+        // them since the moxw line never shipped a workbench before.
+        AutoMigration(from = 31, to = 32),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -148,6 +157,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun workspaceDao(): WorkspaceDAO
 
     abstract fun folderDao(): FolderDAO
+
+    abstract fun missionDao(): MissionDao
 }
 
 object TokenUsageConverter {

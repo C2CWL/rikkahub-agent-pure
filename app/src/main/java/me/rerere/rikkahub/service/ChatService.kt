@@ -466,6 +466,8 @@ class ChatService(
     private val toolVectors: me.rerere.rikkahub.data.vector.ToolVectorIndex,
     private val libraryIndex: me.rerere.rikkahub.data.vector.LibraryIndexCoordinator,
     private val conversationIndex: me.rerere.rikkahub.data.vector.ConversationIndexCoordinator,
+    /** Moxw workbench - tracks conversation-bound missions; artifact logging hooks below. */
+    private val missionEngine: me.rerere.rikkahub.data.mission.MissionEngine,
 ) {
     // workspace 系统提示注入 (依赖 workspaceRepository, 故在类内构造)
     private val workspaceReminderTransformer = WorkspaceReminderTransformer(workspaceRepository)
@@ -737,6 +739,7 @@ class ChatService(
                         session.messageQueue.failReplyWaiters(context.getString(R.string.chat_page_voice_tool_approval))
                     }
                     appScope.launch { dispatchNextQueuedMessage(id) }
+                    appScope.launch { missionEngine.onGenerationFinished(id.toString()) }
                 },
             ).also {
                 _sessionsVersion.value++
@@ -1901,6 +1904,9 @@ class ChatService(
                 },
                 onBeforeModelRequest = {
                     awaitForegroundWorkReady()
+                },
+                onToolExecuted = { toolName, argsJson, outputJson ->
+                    missionEngine.onToolExecuted(conversation.id.toString(), toolName, argsJson, outputJson)
                 },
                 messages = messagesForGeneration,
                 assistant = assistant,
