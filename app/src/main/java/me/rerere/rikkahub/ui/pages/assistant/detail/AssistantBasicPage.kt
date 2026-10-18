@@ -857,8 +857,9 @@ internal fun AssistantBasicContent(
                     }
                 )
 
-                // Only meaningful once a per-theme wallpaper exists to compete with the common one.
-                if (assistant.darkBackground != null || assistant.lightBackground != null) {
+                // Shown whenever any wallpaper is set, so a stored GENERAL can always be switched
+                // back, even after both theme wallpapers were cleared.
+                if (showsBackgroundModeSelector(assistant.background, assistant.darkBackground, assistant.lightBackground)) {
                     HorizontalDivider()
                     BackgroundModeSelector(
                         modifier = Modifier.padding(8.dp),

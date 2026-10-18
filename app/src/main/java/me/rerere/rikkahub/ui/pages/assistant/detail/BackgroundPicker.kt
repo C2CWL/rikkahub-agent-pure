@@ -45,6 +45,17 @@ enum class BackgroundSlot {
     COMMON, DARK, LIGHT
 }
 
+/**
+ * Whether the AUTO / GENERAL wallpaper-mode selector is shown: whenever any wallpaper slot is
+ * set. Tying it to the theme slots alone would hide a stored GENERAL with no way back once both
+ * theme wallpapers are cleared (the mode outlives them).
+ */
+internal fun showsBackgroundModeSelector(
+    background: String?,
+    darkBackground: String?,
+    lightBackground: String?,
+): Boolean = background != null || darkBackground != null || lightBackground != null
+
 @Composable
 fun BackgroundPicker(
     modifier: Modifier = Modifier,
