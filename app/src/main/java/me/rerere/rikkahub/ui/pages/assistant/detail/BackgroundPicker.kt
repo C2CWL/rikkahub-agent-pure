@@ -3,6 +3,7 @@ package me.rerere.rikkahub.ui.pages.assistant.detail
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +36,8 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.AssistantBackgroundMode
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.components.ui.Select
+import me.rerere.rikkahub.ui.theme.CustomColors
 import org.koin.compose.koinInject
 
 /** Which wallpaper slot the user is editing. */
@@ -288,25 +292,25 @@ fun BackgroundModeSelector(
                     }
                 )
             )
-        }
-    ) {
-        SingleChoiceSegmentedButtonRow(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            SegmentedButton(
-                selected = mode == AssistantBackgroundMode.AUTO,
-                onClick = { onModeChange(AssistantBackgroundMode.AUTO) },
-                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-            ) {
-                Text(stringResource(R.string.assistant_page_background_mode_auto))
-            }
-            SegmentedButton(
-                selected = mode == AssistantBackgroundMode.GENERAL,
-                onClick = { onModeChange(AssistantBackgroundMode.GENERAL) },
-                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-            ) {
-                Text(stringResource(R.string.assistant_page_background_mode_general))
-            }
-        }
-    }
+        },
+        tail = {
+            // Same dropdown as Theme → Color mode, blended into the surrounding card.
+            Select(
+                options = AssistantBackgroundMode.entries,
+                selectedOption = mode,
+                onOptionSelected = onModeChange,
+                optionToString = {
+                    stringResource(
+                        when (it) {
+                            AssistantBackgroundMode.AUTO -> R.string.assistant_page_background_mode_auto
+                            AssistantBackgroundMode.GENERAL -> R.string.assistant_page_background_mode_general
+                        }
+                    )
+                },
+                containerColor = CustomColors.cardColorsOnSurfaceContainer.containerColor,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.width(150.dp),
+            )
+        },
+    )
 }
