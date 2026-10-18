@@ -157,7 +157,8 @@ class MissionRepositoryTest {
         repo.logEvent(mission.id, MissionEventType.NOTE, title = "n1")
         repo.logEvent(mission.id, MissionEventType.MILESTONE, title = "m1")
         repo.attachArtifact(mission.id, "/p", "tool")
-        assertEquals(3, dao.snapshotEvents(mission.id).size)
+        // create() logs CREATED; the two logEvent calls plus the ARTIFACT from attachArtifact = 4.
+        assertEquals(4, dao.snapshotEvents(mission.id).size)
 
         repo.delete(mission.id)
 
