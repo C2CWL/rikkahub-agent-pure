@@ -12,6 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -28,8 +29,10 @@ import me.rerere.hugeicons.stroke.Menu03
 import me.rerere.hugeicons.stroke.MessageAdd01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
-import me.rerere.rikkahub.data.datastore.getCurrentChatModel
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.datastore.resolveChatModel
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.usage.TurnFooter
 import me.rerere.rikkahub.ui.context.LocalToaster
 import org.koin.androidx.compose.koinViewModel
 
@@ -37,7 +40,8 @@ import org.koin.androidx.compose.koinViewModel
  * "Clean layout" top bar (DisplaySetting.cleanLayout, off by default).
  *
  * Flat: no title plate, no glass discs behind the buttons. The conversation title is one line
- * and the current model's name sits under it as a small grey subtitle. Taps do the same as the
+ * and, like the regular bar, a small grey subtitle under it reads "assistant / model / N token"
+ * (same token aggregation as the regular bar, see [conversationUsedTokens]). Taps do the same as the
  * regular bar: the title renames, the buttons open the drawer, toggle the preview list and
  * start a new chat.
  */
@@ -45,6 +49,7 @@ import org.koin.androidx.compose.koinViewModel
 internal fun CleanTopBar(
     settings: Settings,
     conversation: Conversation,
+    turnFooters: Map<String, TurnFooter>,
     drawerState: DrawerState,
     bigScreen: Boolean,
     previewMode: Boolean,
@@ -68,7 +73,8 @@ internal fun CleanTopBar(
             }
         },
         title = {
-            val model = settings.getCurrentChatModel()
+            val assistant = settings.getCurrentAssistant()
+            val model = settings.resolveChatModel(conversation.chatModelId, conversation.assistantId)
             Column(
                 modifier = Modifier
                     .clickable {
@@ -87,8 +93,15 @@ internal fun CleanTopBar(
                     style = MaterialTheme.typography.titleMedium,
                 )
                 if (model != null) {
+                    val usedTokens = remember(turnFooters, conversation) {
+                        conversationUsedTokens(turnFooters, conversation)
+                    }
                     Text(
-                        text = model.displayName,
+                        text = topBarSubtitle(
+                            assistantName = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
+                            modelName = model.displayName,
+                            usedTokens = usedTokens,
+                        ),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.labelSmall,
