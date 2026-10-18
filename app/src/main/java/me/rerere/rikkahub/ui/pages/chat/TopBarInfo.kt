@@ -47,16 +47,17 @@ internal fun isTraditionalChineseLocale(locale: Locale): Boolean =
 
 /**
  * [count] the Chinese way: the plain number below 10000, then 万 (10^4) and 亿 (10^8) with up to
- * four decimals and no trailing zeros, e.g. 143793 -> "14.3793万", 100000 -> "10万".
+ * two decimals (half-up) and no trailing zeros, e.g. 143793 -> "14.38万", 100000 -> "10万".
+ * A 万 value that rounds up to 10000 is shown as 亿 instead ("1亿", never "10000万").
  */
-internal fun formatTokensChinese(count: Long, traditional: Boolean = false): String = when {
-    count < 10_000L -> count.toString()
-    count < 100_000_000L -> scaled(count, 10_000L) + if (traditional) "萬" else "万"
-    else -> scaled(count, 100_000_000L) + if (traditional) "億" else "亿"
+internal fun formatTokensChinese(count: Long, traditional: Boolean = false): String {
+    if (count < 10_000L) return count.toString()
+    val wan = scaled(count, 10_000L)
+    if (wan < BigDecimal(10_000)) return plain(wan) + if (traditional) "萬" else "万"
+    return plain(scaled(count, 100_000_000L)) + if (traditional) "億" else "亿"
 }
 
-private fun scaled(count: Long, unit: Long): String =
-    BigDecimal.valueOf(count)
-        .divide(BigDecimal.valueOf(unit), 4, RoundingMode.HALF_UP)
-        .stripTrailingZeros()
-        .toPlainString()
+private fun scaled(count: Long, unit: Long): BigDecimal =
+    BigDecimal.valueOf(count).divide(BigDecimal.valueOf(unit), 2, RoundingMode.HALF_UP)
+
+private fun plain(value: BigDecimal): String = value.stripTrailingZeros().toPlainString()
