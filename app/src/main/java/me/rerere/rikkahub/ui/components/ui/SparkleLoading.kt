@@ -1,10 +1,5 @@
 package me.rerere.rikkahub.ui.components.ui
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,7 +7,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.State
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
@@ -138,14 +132,12 @@ private fun rememberSparkleLook(): SparkleLook {
     )
 }
 
+/** Still frame used when animations are off: pentagon at full size, comet half-way round. */
+internal const val SPARKLE_STATIC_PHASE = 1f / 6f
+
 @Composable
-private fun rememberSparklePhase(): State<Float> =
-    rememberInfiniteTransition(label = "sparkle").animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(SPARKLE_LOOP_MS, easing = LinearEasing)),
-        label = "sparkle-phase",
-    )
+private fun rememberSparklePhase(): () -> Float =
+    rememberLoopPhase(SPARKLE_LOOP_MS, staticPhase = SPARKLE_STATIC_PHASE, label = "sparkle")
 
 private fun paletteAt(stops: List<Color>, u: Float): Color {
     val x = u.coerceIn(0f, 1f) * (stops.size - 1)
@@ -158,7 +150,7 @@ private fun paletteAt(stops: List<Color>, u: Float): Color {
 fun SparkleLoadingIndicator(modifier: Modifier = Modifier) {
     val look = rememberSparkleLook()
     val phase = rememberSparklePhase()
-    SparkleIcon(modifier, look) { phase.value }
+    SparkleIcon(modifier, look, phase)
 }
 
 /**
@@ -177,7 +169,7 @@ fun SparkleThinkingRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        SparkleIcon(Modifier.size(28.dp), look) { phase.value }
+        SparkleIcon(Modifier.size(28.dp), look, phase)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = text ?: stringResource(R.string.chat_loading_sparkle_replying),
@@ -189,7 +181,7 @@ fun SparkleThinkingRow(
                     .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
                     .drawWithContent {
                         drawContent()
-                        val t = phase.value
+                        val t = phase()
                         drawRect(flowBrush(look, t, size.width), blendMode = BlendMode.SrcIn)
                         val band = size.width * 0.45f
                         val sweep = (t * SPARKLE_SWEEP_CYCLES) % 1f
@@ -212,7 +204,7 @@ fun SparkleThinkingRow(
                 modifier = Modifier
                     .size(width = 18.dp, height = 14.dp)
                     .drawWithCache {
-                        onDrawBehind { drawDots(look, phase.value) }
+                        onDrawBehind { drawDots(look, phase()) }
                     },
             )
         }

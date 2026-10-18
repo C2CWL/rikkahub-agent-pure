@@ -1,22 +1,15 @@
 package me.rerere.rikkahub.ui.components.ui
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.StartOffset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,8 +46,8 @@ internal fun shimmerBandStart(progress: Float, width: Float, band: Float): Float
  * sweeping across the letters. Theme colours only: onSurfaceVariant letters, primary highlight,
  * surfaceContainerHigh backing so it stays legible over photo wallpapers.
  *
- * The sweep only re-draws; reading the animated value inside the draw lambda keeps it out of
- * composition and layout.
+ * The sweep only re-draws: the phase accessor is read inside the draw lambda, so it stays out of
+ * composition and layout. With animations off system-wide the label is static (no band).
  */
 @Composable
 fun ShimmerThinkingLabel(
@@ -63,7 +56,7 @@ fun ShimmerThinkingLabel(
 ) {
     val colors = MaterialTheme.colorScheme
     val highlight = colors.primary
-    val progress by shimmerProgress()
+    val progress = shimmerProgress()
     Box(
         modifier = modifier
             .clip(CircleShape)
@@ -82,7 +75,7 @@ fun ShimmerThinkingLabel(
                 .drawWithContent {
                     drawContent()
                     val band = size.width * SHIMMER_BAND_FRACTION
-                    val start = shimmerBandStart(progress, size.width, band)
+                    val start = shimmerBandStart(progress(), size.width, band)
                     drawRect(
                         brush = Brush.horizontalGradient(
                             colors = listOf(Color.Transparent, highlight, Color.Transparent),
@@ -105,18 +98,23 @@ fun ShimmerBar(modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
     val base = colors.primary.copy(alpha = 0.22f)
     val highlight = colors.primary
-    val progress by shimmerProgress()
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+    val progress = shimmerProgress()
+    BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
+        val barHeight = if (constraints.hasBoundedHeight) {
+            shimmerBarHeightDp(maxHeight.value).dp
+        } else {
+            SHIMMER_BAR_MIN_HEIGHT_DP.dp
+        }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.32f)
+                .height(barHeight)
                 .clip(CircleShape)
                 .background(base)
                 .drawWithContent {
                     drawContent()
                     val band = size.width * SHIMMER_BAND_FRACTION * 1.4f
-                    val start = shimmerBandStart(progress, size.width, band)
+                    val start = shimmerBandStart(progress(), size.width, band)
                     drawRect(
                         brush = Brush.horizontalGradient(
                             colors = listOf(Color.Transparent, highlight, Color.Transparent),
@@ -130,24 +128,30 @@ fun ShimmerBar(modifier: Modifier = Modifier) {
     }
 }
 
+/** Static phase when animations are off: the band rests off the right edge. */
+internal const val SHIMMER_STATIC_PHASE = 1f
+
 @Composable
-private fun shimmerProgress() = rememberInfiniteTransition(label = "shimmer").animateFloat(
-    initialValue = 0f,
-    targetValue = 1f,
-    animationSpec = infiniteRepeatable(
-        animation = tween(
-            durationMillis = SHIMMER_SWEEP_MS + SHIMMER_PAUSE_MS,
-            easing = { t ->
-                // Sweep during the first part of the cycle, hold off-screen for the rest.
-                val sweep = SHIMMER_SWEEP_MS.toFloat() / (SHIMMER_SWEEP_MS + SHIMMER_PAUSE_MS)
-                if (t >= sweep) 1f else shimmerEase(t / sweep)
-            },
-        ),
-        repeatMode = RepeatMode.Restart,
-        initialStartOffset = StartOffset(0),
-    ),
-    label = "shimmer-progress",
+private fun shimmerProgress(): () -> Float = rememberLoopPhase(
+    durationMillis = SHIMMER_SWEEP_MS + SHIMMER_PAUSE_MS,
+    staticPhase = SHIMMER_STATIC_PHASE,
+    label = "shimmer",
+    easing = { t -> shimmerSweepEasing(t) },
 )
+
+/** Sweep during the first part of the cycle, then hold off-screen for the pause. */
+internal fun shimmerSweepEasing(t: Float): Float {
+    val sweep = SHIMMER_SWEEP_MS.toFloat() / (SHIMMER_SWEEP_MS + SHIMMER_PAUSE_MS)
+    return if (t >= sweep) 1f else shimmerEase(t / sweep)
+}
+
+/** The bar is a third of its slot, but never thinner than [SHIMMER_BAR_MIN_HEIGHT_DP] (nor the slot). */
+internal const val SHIMMER_BAR_HEIGHT_FRACTION = 0.32f
+internal const val SHIMMER_BAR_MIN_HEIGHT_DP = 6f
+
+internal fun shimmerBarHeightDp(slotHeightDp: Float): Float =
+    maxOf(slotHeightDp * SHIMMER_BAR_HEIGHT_FRACTION, SHIMMER_BAR_MIN_HEIGHT_DP)
+        .coerceAtMost(slotHeightDp.coerceAtLeast(0f))
 
 /** Gentle ease-in-out (smoothstep), so the band glides rather than ticks. */
 internal fun shimmerEase(t: Float): Float {
