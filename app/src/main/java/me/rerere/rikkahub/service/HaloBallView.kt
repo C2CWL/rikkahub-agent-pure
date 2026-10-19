@@ -49,6 +49,10 @@ internal class HaloBallView(context: Context) : View(context) {
 
         /** Track colour while working — the halo, dimmed to a neutral grey. */
         const val TRACK_GREY = 0xFFB4B8BE.toInt()
+
+        /** Half-tucked "reply finished" dot radius, in stroke widths, and its backing rim in dp. */
+        const val DONE_MARKER_SCALE = 1.1f
+        const val DONE_MARKER_RIM_DP = 1.5f
         const val TRACK_ALPHA = 120
 
         const val DOT_SCALE = 1.15f        // dot radius, in stroke widths
@@ -102,7 +106,19 @@ internal class HaloBallView(context: Context) : View(context) {
         set(value) {
             if (field == value) return
             field = value
-            if (handleMode) invalidate()
+            if (handleMode || halfTuckedOnRight != null) invalidate()
+        }
+
+    /**
+     * Non-null while the whole ball is tucked half off-screen (the half-ball tuck style), true
+     * when it hugs the right edge. The ball keeps its full look, orbit included; an unseen
+     * finished reply ([handleSignal] DONE) adds an accent marker on the visible half.
+     */
+    var halfTuckedOnRight: Boolean? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
         }
 
     /**
@@ -261,6 +277,25 @@ internal class HaloBallView(context: Context) : View(context) {
         } else if (icon == null) {
             drawHalo(canvas, g)
         }
+        val tuckedOnRight = halfTuckedOnRight
+        if (tuckedOnRight != null && handleSignal == HaloBallLook.HandleSignal.DONE) {
+            drawDoneMarker(canvas, g, tuckedOnRight)
+        }
+    }
+
+    /**
+     * "A reply is waiting" on a half-tucked ball: a solid accent dot on the ring, on the visible
+     * half, ringed in the backing colour so it reads over the ring or a picked image.
+     */
+    private fun drawDoneMarker(canvas: Canvas, g: Geometry, onRight: Boolean) {
+        val (dx, dy) = HaloBallLook.doneMarkerDirection(onRight)
+        val x = g.cx + dx * g.ringRadius
+        val y = g.cy + dy * g.ringRadius
+        val radius = g.stroke * DONE_MARKER_SCALE
+        fillPaint.color = withAlpha(surfaceColor, 255)
+        canvas.drawCircle(x, y, radius + DONE_MARKER_RIM_DP * density, fillPaint)
+        fillPaint.color = withAlpha(accentColor, 255)
+        canvas.drawCircle(x, y, radius, fillPaint)
     }
 
     /**

@@ -46,6 +46,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.FLOATING_BALL_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.FloatingBallStyle
+import me.rerere.rikkahub.data.datastore.FloatingBallTuckStyle
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.model.Avatar
@@ -347,6 +348,12 @@ class FloatingBallService : Service(), KoinComponent {
                     scheduleIdle()
                 } else {
                     applyAppearance()
+                    // A tucked round ball follows a tuck-style change at once.
+                    if (hidden && capsuleView == null && tuckedStyle != null &&
+                        settings.floatingBallTuckStyle != tuckedStyle
+                    ) {
+                        tuckIntoEdge()
+                    }
                 }
             }
         }
@@ -573,6 +580,7 @@ class FloatingBallService : Service(), KoinComponent {
         isShowing = false
         working = false
         unseenDone = false
+        tuckedStyle = null
         mainHandler.removeCallbacks(capsuleTick)
         longPressFired = false
         hidden = false
@@ -957,13 +965,39 @@ class FloatingBallService : Service(), KoinComponent {
         val size = view.width.takeIf { it > 0 } ?: params.width
         val screenWidth = resources.displayMetrics.widthPixels
         val onRight = params.x + size / 2 >= screenWidth / 2
-        val strip = (TUCKED_STRIP_DP * resources.displayMetrics.density).toInt()
+        val tuckStyle = settingsStore.settingsFlow.value.floatingBallTuckStyle
+        val halfBall = tuckStyle == FloatingBallTuckStyle.HALF_BALL
+        val strip = if (halfBall) {
+            HaloBallLook.halfTuckStrip(size)
+        } else {
+            (TUCKED_STRIP_DP * resources.displayMetrics.density).toInt()
+        }
         val targetX = HaloBallLook.tuckedX(onRight, screenWidth, size, strip).toFloat()
-        // Only the round ball has a handle; the capsule tucks via tuckCapsule() above.
-        (view as? HaloBallView)?.setHandle(on = true, onRight = onRight)
+        // Only the round ball tucks this way; the capsule tucks via tuckCapsule() above. Half-ball:
+        // the whole ball (orbit included) stays drawn and just slides half off the edge.
+        (view as? HaloBallView)?.let { halo ->
+            if (halfBall) {
+                halo.setHandle(on = false)
+                halo.halfTuckedOnRight = onRight
+            } else {
+                halo.halfTuckedOnRight = null
+                halo.setHandle(on = true, onRight = onRight)
+            }
+        }
+        tuckedStyle = tuckStyle
         animateTo(view, params, wm, targetX, tuckedAlpha())
-        setEdgeGestureExclusion(view, width = size, height = view.height.takeIf { it > 0 } ?: params.height)
+        // Only the on-screen part is kept off the system back gesture.
+        val (visibleLeft, visibleRight) = HaloBallLook.visibleSpan(onRight, size, strip)
+        setEdgeGestureExclusion(
+            view,
+            left = visibleLeft,
+            width = visibleRight - visibleLeft,
+            height = view.height.takeIf { it > 0 } ?: params.height,
+        )
     }
+
+    /** Tuck style the tucked round ball was laid out with, to re-tuck when the setting changes. */
+    private var tuckedStyle: FloatingBallTuckStyle? = null
 
     /**
      * Keeps the system edge-back gesture off a tucked handle (API 29+), so a swipe from the edge
@@ -971,12 +1005,12 @@ class FloatingBallService : Service(), KoinComponent {
      * is centred and capped at [EDGE_EXCLUSION_MAX_DP], under the system's per-edge budget
      * (200dp); [clearEdgeGestureExclusion] removes it on wake.
      */
-    private fun setEdgeGestureExclusion(view: View, width: Int, height: Int) {
+    private fun setEdgeGestureExclusion(view: View, width: Int, height: Int, left: Int = 0) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
         val max = (EDGE_EXCLUSION_MAX_DP * resources.displayMetrics.density).toInt()
         val h = height.coerceIn(0, max)
         val top = ((height - h) / 2).coerceAtLeast(0)
-        view.systemGestureExclusionRects = listOf(Rect(0, top, width.coerceAtLeast(0), top + h))
+        view.systemGestureExclusionRects = listOf(Rect(left, top, left + width.coerceAtLeast(0), top + h))
     }
 
     private fun clearEdgeGestureExclusion(view: View) {
@@ -1009,7 +1043,11 @@ class FloatingBallService : Service(), KoinComponent {
         val restingX = readStringPreference(PREF_X)?.toIntOrNull()?.coerceIn(margin, maxX)
             ?: if (params.x + size / 2 >= screenWidth / 2) maxX else margin
         // Back to the full ball before it moves, so it slides (or jumps) out whole.
-        (view as? HaloBallView)?.setHandle(on = false)
+        (view as? HaloBallView)?.let { halo ->
+            halo.setHandle(on = false)
+            halo.halfTuckedOnRight = null
+        }
+        tuckedStyle = null
         if (instant) {
             motionAnimator?.cancel()
             view.animate().cancel()

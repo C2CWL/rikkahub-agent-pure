@@ -90,6 +90,30 @@ internal object HaloBallLook {
         return (color and 0x00FFFFFF) or (a shl 24)
     }
 
+    /** Half-ball tuck (FloatingBallTuckStyle.HALF_BALL): how much of the ball stays on screen. */
+    const val HALF_TUCK_VISIBLE_FRACTION = 0.5f
+
+    /** On-screen strip of a half-tucked ball of width [size], for [tuckedX]. */
+    fun halfTuckStrip(size: Int): Int = (size * HALF_TUCK_VISIBLE_FRACTION).toInt().coerceAtLeast(1)
+
+    /**
+     * The on-screen part of a ball of width [size] tucked by [tuckedX] with [strip], in view x
+     * coordinates as `[first, second)`: the edge-gesture exclusion covers exactly this.
+     */
+    fun visibleSpan(onRight: Boolean, size: Int, strip: Int): Pair<Int, Int> {
+        val visible = strip.coerceIn(1, size.coerceAtLeast(1))
+        return if (onRight) 0 to visible else (size - visible) to size
+    }
+
+    /**
+     * Unit offset from the ball's centre of the "reply finished" marker on a half-tucked ball: on
+     * the ring, upper inner side, i.e. on the visible half (left half when tucked right).
+     */
+    fun doneMarkerDirection(onRight: Boolean): Pair<Float, Float> {
+        val d = 0.70710677f
+        return (if (onRight) -d else d) to -d
+    }
+
     /**
      * Window x for a tucked ball of width [size]: everything but a [strip]-wide sliver is pushed
      * past the edge the ball sits on.
