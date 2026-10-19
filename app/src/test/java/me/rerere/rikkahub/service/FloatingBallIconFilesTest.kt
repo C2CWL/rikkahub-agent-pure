@@ -8,6 +8,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import kotlin.random.Random
 
 class FloatingBallIconFilesTest {
 
@@ -24,11 +25,26 @@ class FloatingBallIconFilesTest {
     }
 
     @Test
+    fun `two picks in the same millisecond still get different names`() {
+        val dir = tmp.root
+        val random = Random(7)
+        val a = FloatingBallIconFiles.newFile(dir, 1000L, random)
+        val b = FloatingBallIconFiles.newFile(dir, 1000L, random)
+        assertNotEquals(a.name, b.name)
+        assertTrue(Regex("""floating_ball_icon_1000_[0-9a-f]{8}""").matches(a.name))
+        assertTrue(FloatingBallIconFiles.isIconFile(a))
+        assertTrue(FloatingBallIconFiles.isIconFile(b))
+    }
+
+    @Test
     fun `only our icon files are recognised`() {
         val dir = tmp.root
         assertTrue(FloatingBallIconFiles.isIconFile(File(dir, "floating_ball_icon")))
         assertTrue(FloatingBallIconFiles.isIconFile(FloatingBallIconFiles.newFile(dir, 42L)))
         assertFalse(FloatingBallIconFiles.isIconFile(File(dir, "floating_ball_icon_backup")))
+        assertFalse(FloatingBallIconFiles.isIconFile(File(dir, "floating_ball_icon_123_xyz")))
+        // Timestamp-only name from an earlier build is still cleaned up.
+        assertTrue(FloatingBallIconFiles.isIconFile(File(dir, "floating_ball_icon_1792360311000")))
         assertFalse(FloatingBallIconFiles.isIconFile(File(dir, "avatar_123")))
     }
 

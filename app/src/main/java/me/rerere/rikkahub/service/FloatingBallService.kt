@@ -564,6 +564,9 @@ class FloatingBallService : Service(), KoinComponent {
 
     private fun hideBall() {
         val view = ballView ?: return
+        // Removing the window drops its exclusion rects anyway; cleared first so a view that
+        // somehow fails to detach cannot keep them.
+        clearEdgeGestureExclusion(view)
         ballView = null
         ballParams = null
         shownStyle = null
@@ -1050,6 +1053,10 @@ class FloatingBallService : Service(), KoinComponent {
 
     /** Capsule wake: back to the full bar at its remembered edge, at full opacity, at once. */
     private fun wakeCapsule(capsule: CapsuleBallView, params: WindowManager.LayoutParams, wm: WindowManager) {
+        // The tucked capsule's edge rect must not outlive the handle: it would keep swallowing
+        // the system back gesture next to the expanded bar. (wakeUp() clears the same view, as
+        // the capsule is the overlay's root view; kept here so this path is safe on its own.)
+        clearEdgeGestureExclusion(capsule)
         motionAnimator?.cancel()
         capsule.animate().cancel()
         val screenWidth = resources.displayMetrics.widthPixels

@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.service
 
 import java.io.File
+import kotlin.random.Random
 
 /**
  * Files behind the user-picked floating-ball icon, in the app's private files dir.
@@ -14,12 +15,22 @@ internal object FloatingBallIconFiles {
     const val LEGACY_NAME = "floating_ball_icon"
     private const val PREFIX = "floating_ball_icon_"
 
-    /** A new target for the picture picked at [nowMs]. */
-    fun newFile(dir: File, nowMs: Long): File = File(dir, PREFIX + nowMs)
+    /** `<millis>_<8 hex>` after [PREFIX]; `<millis>` alone is an earlier build's name, still ours. */
+    private val STAMP = Regex("""\d+(_[0-9a-f]{8})?""")
+
+    /**
+     * A new target for the picture picked at [nowMs], `floating_ball_icon_<millis>_<8 hex>`: the
+     * random suffix rules out a collision between two picks in the same millisecond.
+     */
+    fun newFile(dir: File, nowMs: Long, random: Random = Random.Default): File {
+        val suffix = random.nextInt().toUInt().toString(16).padStart(8, '0')
+        return File(dir, "$PREFIX${nowMs}_$suffix")
+    }
 
     /** Whether [file] is one of ours (current naming or the legacy fixed name). */
     fun isIconFile(file: File): Boolean =
-        file.name == LEGACY_NAME || (file.name.startsWith(PREFIX) && file.name.removePrefix(PREFIX).toLongOrNull() != null)
+        file.name == LEGACY_NAME ||
+            (file.name.startsWith(PREFIX) && STAMP.matches(file.name.removePrefix(PREFIX)))
 
     /** Every icon file in [dir] except [keep] (null deletes them all). */
     fun staleFiles(dir: File, keep: File?): List<File> =
