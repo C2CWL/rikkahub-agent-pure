@@ -93,25 +93,34 @@ internal class CapsuleBallView(context: Context) : FrameLayout(context) {
         addView(closeButton, LinearLayout.LayoutParams(dp(CLOSE_DP), dp(CLOSE_DP)))
     }
 
-    private val handleBackground = GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE
-        cornerRadius = dp(HANDLE_WIDTH_DP).toFloat() / 2f
-    }
+    private var handleAccent: Int = 0xFF6750A4.toInt()
+    private val handlePainter = EdgeHandlePainter(density)
 
     /**
      * The tucked handle: a [HANDLE_TOUCH_DP]-wide touch strip that only paints a
-     * [HANDLE_WIDTH_DP]-wide pill against the screen edge it sits on ([handleOnRight]).
+     * [HANDLE_WIDTH_DP]-wide pill against the screen edge it sits on ([handleOnRight]), showing
+     * [handleSignal] like the round ball's handle.
      */
     private val handle = object : View(context) {
         override fun onDraw(canvas: Canvas) {
             val pill = dp(HANDLE_WIDTH_DP).coerceAtMost(width)
             val left = if (handleOnRight) width - pill else 0
-            handleBackground.setBounds(left, 0, left + pill, height)
-            handleBackground.draw(canvas)
+            val animating = handlePainter.draw(
+                canvas, left.toFloat(), 0f, pill.toFloat(), height.toFloat(), handleAccent, handleSignal,
+            )
+            if (animating) postInvalidateOnAnimation()
         }
     }.apply {
         visibility = GONE
     }
+
+    /** What the tucked handle signals (running turn / unseen finished reply). */
+    var handleSignal: HaloBallLook.HandleSignal = HaloBallLook.HandleSignal.IDLE
+        set(value) {
+            if (field == value) return
+            field = value
+            handle.invalidate()
+        }
 
     /** Screen edge the tucked handle hugs; its pill is drawn on that side of the touch strip. */
     var handleOnRight: Boolean = true
@@ -136,7 +145,7 @@ internal class CapsuleBallView(context: Context) : FrameLayout(context) {
         title.setTextColor(onSurface)
         status.setTextColor(onSurfaceVariant)
         closeButton.glyphColor = onSurfaceVariant
-        handleBackground.setColor(accent)
+        handleAccent = accent
         handle.invalidate()
         halo.accentColor = accent
     }

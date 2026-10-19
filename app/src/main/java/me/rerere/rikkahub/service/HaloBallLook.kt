@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.service
 
+import kotlin.math.PI
+import kotlin.math.cos
+
 /**
  * Resting-look and edge-handle numbers for the floating ball, plus the small bits of maths that
  * place them. Kept pure (no Android types) so they can be unit-tested and shared with the
@@ -37,6 +40,49 @@ internal object HaloBallLook {
      * and drag it out (the strip is also excluded from the system back gesture).
      */
     const val HANDLE_STRIP_DP = 30f
+
+    /**
+     * What a tucked handle signals. The awake ball shows a running turn as a grey track with a
+     * light dot orbiting it; the handle says the same in its own shape: [WORKING] is a grey pill
+     * with a light dot running along it, [DONE] (a turn finished since the user last woke the
+     * ball or opened the panel) is the usual accent pill with the light dot resting in its middle.
+     */
+    enum class HandleSignal { IDLE, WORKING, DONE }
+
+    fun handleSignal(working: Boolean, unseenDone: Boolean): HandleSignal = when {
+        working -> HandleSignal.WORKING
+        unseenDone -> HandleSignal.DONE
+        else -> HandleSignal.IDLE
+    }
+
+    /** The light dot on a signalling handle, in dp; it sits inside the [HANDLE_WIDTH_DP] pill. */
+    const val HANDLE_DOT_DP = 4f
+
+    /** One sweep of the working dot from one end of the pill to the other, in ms. */
+    const val HANDLE_SWEEP_MS = 1400L
+
+    /**
+     * Where the light dot sits along the pill, 0 (top) .. 1 (bottom). While [working] and
+     * [animate] it eases back and forth once per [HANDLE_SWEEP_MS]; otherwise (done, or reduced
+     * motion) it rests in the middle.
+     */
+    fun handleDotFraction(nowMs: Long, working: Boolean, animate: Boolean): Float {
+        if (!working || !animate) return 0.5f
+        val period = HANDLE_SWEEP_MS * 2
+        val phase = (nowMs.mod(period)).toFloat() / period
+        // Cosine ping-pong: 0 -> 1 -> 0, slowing at the ends.
+        return ((1f - cos(phase * 2f * PI.toFloat())) / 2f)
+    }
+
+    /**
+     * A tucked handle with an unseen finished reply is never fainter than this, so the signal
+     * reaches the eye even with a very low "hidden opacity" setting.
+     */
+    const val HANDLE_DONE_MIN_ALPHA = 0.85f
+
+    /** Opacity of the tucked window: the user's [hiddenAlpha], raised for [HandleSignal.DONE]. */
+    fun tuckedAlpha(hiddenAlpha: Float, signal: HandleSignal): Float =
+        if (signal == HandleSignal.DONE) maxOf(hiddenAlpha, HANDLE_DONE_MIN_ALPHA) else hiddenAlpha
 
     /** [color] with its alpha replaced by [fraction] (0..1) of full opacity. */
     fun withAlphaFraction(color: Int, fraction: Float): Int {

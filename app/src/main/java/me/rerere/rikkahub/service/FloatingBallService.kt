@@ -259,6 +259,35 @@ class FloatingBallService : Service(), KoinComponent {
         haloView?.setWorking(working && !panelOpen && capsuleView?.handleMode != true)
         mainHandler.removeCallbacks(capsuleTick)
         if (capsuleView != null) capsuleTick.run()
+        syncHandleSignal()
+    }
+
+    /**
+     * A turn finished and the user has not looked since: set on ACTION_WORKING_OFF, cleared when
+     * the ball is woken from the edge or the panel opens. Only the tucked handle shows it (the
+     * awake capsule already says "done" in its status line).
+     */
+    private var unseenDone = false
+
+    /**
+     * Pushes the running / finished state onto the tucked handle, so a ball tucked into the edge
+     * still says that the agent is working or that a reply is waiting.
+     */
+    private fun syncHandleSignal() {
+        val signal = HaloBallLook.handleSignal(working = working, unseenDone = unseenDone)
+        (ballView as? HaloBallView)?.handleSignal = signal
+        capsuleView?.handleSignal = signal
+    }
+
+    /** Opacity of the tucked ball: the user's setting, raised while a finished reply is unseen. */
+    private fun tuckedAlpha(): Float =
+        HaloBallLook.tuckedAlpha(hiddenAlpha(), HaloBallLook.handleSignal(working, unseenDone))
+
+    /** Fades an already-tucked ball to [tuckedAlpha] after the signal changed (not mid-slide). */
+    private fun refreshTuckedAlpha() {
+        val view = ballView ?: return
+        if (!hidden || motionAnimator?.isRunning == true) return
+        view.animate().alpha(tuckedAlpha()).setDuration(IDLE_ANIM_MS).start()
     }
 
     /** Cache so repainting on unrelated settings changes does not re-decode the picked image. */
@@ -336,6 +365,7 @@ class FloatingBallService : Service(), KoinComponent {
                 panelOpen = true
                 // The user has seen the result now; the capsule goes back to "tap to chat".
                 lastTurnMs = null
+                unseenDone = false
                 if (ballView == null) {
                     stopSelf()
                 } else {
@@ -388,7 +418,9 @@ class FloatingBallService : Service(), KoinComponent {
                     // away mid-turn. A ball that is already tucked stays tucked (per the agreed
                     // behaviour) — we only stop the countdown from tucking an awake one.
                     mainHandler.removeCallbacks(idleRunnable)
+                    unseenDone = false
                     syncWorking()
+                    refreshTuckedAlpha()
                 }
                 return START_NOT_STICKY
             }
@@ -400,7 +432,10 @@ class FloatingBallService : Service(), KoinComponent {
                     workingSinceMs?.let { lastTurnMs = System.currentTimeMillis() - it }
                     workingSinceMs = null
                     working = false
+                    // A reply the user did not watch arrive: the tucked handle keeps saying so.
+                    unseenDone = !panelOpen
                     syncWorking()
+                    refreshTuckedAlpha()
                     scheduleIdle()
                 }
                 return START_NOT_STICKY
@@ -534,6 +569,7 @@ class FloatingBallService : Service(), KoinComponent {
         shownStyle = null
         isShowing = false
         working = false
+        unseenDone = false
         mainHandler.removeCallbacks(capsuleTick)
         longPressFired = false
         hidden = false
@@ -894,7 +930,10 @@ class FloatingBallService : Service(), KoinComponent {
             mainHandler.removeCallbacks(idleRunnable)
             tuckIntoEdge()
         } else {
+            // Woken from the edge: the user is looking at the ball now.
+            unseenDone = false
             wakeUp(instant)
+            syncHandleSignal()
             scheduleIdle()
         }
     }
@@ -919,7 +958,7 @@ class FloatingBallService : Service(), KoinComponent {
         val targetX = HaloBallLook.tuckedX(onRight, screenWidth, size, strip).toFloat()
         // Only the round ball has a handle; the capsule tucks via tuckCapsule() above.
         (view as? HaloBallView)?.setHandle(on = true, onRight = onRight)
-        animateTo(view, params, wm, targetX, hiddenAlpha())
+        animateTo(view, params, wm, targetX, tuckedAlpha())
         setEdgeGestureExclusion(view, width = size, height = view.height.takeIf { it > 0 } ?: params.height)
     }
 
@@ -1000,7 +1039,7 @@ class FloatingBallService : Service(), KoinComponent {
         // The root keeps a shadow inset on every side; push it past the edge so the handle is flush.
         params.x = if (onRight) screenWidth - strip - capsule.shadowInset else -capsule.shadowInset
         runCatching { wm.updateViewLayout(capsule, params) }
-        capsule.animate().alpha(hiddenAlpha()).setDuration(IDLE_ANIM_MS).start()
+        capsule.animate().alpha(tuckedAlpha()).setDuration(IDLE_ANIM_MS).start()
         // Sizes from the handle layout: the view is only re-laid out on the next frame.
         setEdgeGestureExclusion(
             capsule,
