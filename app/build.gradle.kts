@@ -60,18 +60,18 @@ android {
         create("moxw") {
             dimension = "brand"
             applicationId = "com.moxw.agent"
-            versionCode = 1
-            versionName = "0.1.0"
+            versionCode = 2
+            versionName = "0.2.0"
             resValue("string", "app_name", "Moxw Agent")
             buildConfigField("String", "BRAND_NAME", "\"Moxw\"")
             buildConfigField("String", "BRAND_ID", "\"moxw\"")
-            buildConfigField("String", "VERSION_NAME", "\"0.1.0\"")
-            buildConfigField("String", "VERSION_CODE", "\"1\"")
+            buildConfigField("String", "VERSION_NAME", "\"0.2.0\"")
+            buildConfigField("String", "VERSION_CODE", "\"2\"")
             buildConfigField("String", "UPDATE_API_URL", "\"\"")
-            // Moxw ships from its own branch and has never published a GitHub Release on
-            // this repo — all releases here are Pure-line tags (vX.Y.Z-pure.N).  Without
-            // this guard the Moxw build fetches the latest Pure release, compares it
-            // against versionName 0.1.0, and wrongly offers a Pure APK as an update.
+            // Moxw ships from its own branch; this repo's /releases/latest still points at
+            // the Pure line (vX.Y.Z-pure.N). Without this guard a Moxw build fetches that
+            // Pure release, compares it against versionName 0.2.0, and wrongly offers a
+            // Pure APK as an update.
             buildConfigField("boolean", "UPDATE_CHECK_ENABLED", "false")
         }
     }
