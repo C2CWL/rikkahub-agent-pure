@@ -51,10 +51,12 @@ class RunOrchestratorTest {
             try {
                 delay(delayMs)
                 val index = handle.id.removePrefix("run-").toInt()
+                // A terminal result carries the child's final text (P6): a finished run its
+                // answer, a failed one whatever it managed to write before dying.
                 return if (index in failAt) {
-                    RunResult(RunStatus.FAILED, handle.conversationId, "boom")
+                    RunResult(RunStatus.FAILED, handle.conversationId, "boom", finalText = "partial $index")
                 } else {
-                    RunResult(RunStatus.COMPLETED, handle.conversationId)
+                    RunResult(RunStatus.COMPLETED, handle.conversationId, finalText = "answer $index")
                 }
             } finally {
                 active.decrementAndGet()
@@ -121,5 +123,29 @@ class RunOrchestratorTest {
         assertEquals(3, batch.completed)
         assertEquals("boom", batch.children[1].failure)
         assertTrue(!batch.allCompleted)
+    }
+
+    @Test
+    fun `each child's final text comes back in the aggregate`() = runBlocking {
+        val fake = FakeRunService()
+        val orchestrator = RunOrchestrator({ fake }, RunEventRepository(FakeRunEventDao()))
+
+        val batch = orchestrator.dispatch(requests = List(3) { request(it) })
+
+        assertEquals(
+            listOf("answer 0", "answer 1", "answer 2"),
+            batch.children.map { it.result },
+        )
+    }
+
+    @Test
+    fun `a failed child still reports the text it managed to write`() = runBlocking {
+        val fake = FakeRunService(failAt = setOf(1))
+        val orchestrator = RunOrchestrator({ fake }, RunEventRepository(FakeRunEventDao()))
+
+        val batch = orchestrator.dispatch(requests = List(2) { request(it) })
+
+        assertEquals("boom", batch.children[1].failure)
+        assertEquals("partial 1", batch.children[1].result)
     }
 }

@@ -45,6 +45,14 @@ class RunOrchestrator(
         val conversationId: String?,
         val status: RunStatus?,
         val failure: String? = null,
+        /**
+         * P6 — the child's final assistant text (see [RunResult.finalText]). Returned here so
+         * the dispatch tool can hand each answer straight back to the model instead of making
+         * it go and read N child conversations for text the orchestrator already had. The
+         * dispatch tool truncates it before it reaches the model's context; the remainder
+         * stays in the child's conversation.
+         */
+        val result: String? = null,
     ) {
         val succeeded: Boolean get() = status == RunStatus.COMPLETED
     }
@@ -117,14 +125,14 @@ class RunOrchestrator(
             },
         )
 
-        val result = runCatching { runService.awaitTerminal(handle) }.getOrNull()
+        val terminal = runCatching { runService.awaitTerminal(handle) }.getOrNull()
         journal(
             type = RunEventType.SUBAGENT_FINISHED,
             missionId = request.missionId,
             conversationId = handle.conversationId.toString(),
             runId = handle.id,
-            title = result?.status?.name ?: "FAILED",
-            payload = result?.failure?.let { buildJsonObject { put("failure", it) } },
+            title = terminal?.status?.name ?: "FAILED",
+            payload = terminal?.failure?.let { buildJsonObject { put("failure", it) } },
         )
 
         return ChildOutcome(
@@ -132,8 +140,9 @@ class RunOrchestrator(
             label = label,
             runId = handle.id,
             conversationId = handle.conversationId.toString(),
-            status = result?.status,
-            failure = result?.failure,
+            status = terminal?.status,
+            failure = terminal?.failure,
+            result = terminal?.finalText,
         )
     }
 

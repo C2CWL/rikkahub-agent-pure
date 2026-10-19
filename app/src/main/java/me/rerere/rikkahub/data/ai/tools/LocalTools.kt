@@ -755,6 +755,17 @@ class LocalTools(
         )
     }
 
+    /**
+     * P6 — the expert library snapshot, for tools built OUTSIDE this factory.
+     *
+     * `mission_dispatch` is assembled in ChatService (it needs the orchestrator, the mission
+     * engine and the calling conversation), so it cannot reach this factory's repository
+     * directly. Exposing the same blocking snapshot `subagent_dispatch` uses keeps both
+     * dispatch surfaces reading ONE roster instead of two that can drift apart.
+     */
+    fun expertDefinitionsBlocking(): List<me.rerere.rikkahub.data.agentdef.AgentDefinition> =
+        agentDefinitionRepository.snapshotBlocking()
+
     fun getTools(
         options: List<LocalToolOption>,
         invocationContext: ToolInvocationContext = ToolInvocationContext.EMPTY,

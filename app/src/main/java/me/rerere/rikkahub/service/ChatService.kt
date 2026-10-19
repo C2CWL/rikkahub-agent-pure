@@ -1635,6 +1635,7 @@ class ChatService(
                 defaultAssistantId = surfaceAssistant.id,
                 conversationId = conversationId,
                 missionIdProvider = { runCatching { missionEngine.missionIdFor(conversationId.toString()) }.getOrNull() },
+                definitions = localTools.expertDefinitionsBlocking(),
             )
         )
         // P5 — history search. Registered here rather than in ChatToolFactory because that
@@ -2055,6 +2056,7 @@ class ChatService(
                 defaultAssistantId = surfaceAssistant.id,
                 conversationId = conversationId,
                 missionIdProvider = { runCatching { missionEngine.missionIdFor(conversationId.toString()) }.getOrNull() },
+                definitions = localTools.expertDefinitionsBlocking(),
             )
         )
         // P5 — history search. Registered here rather than in ChatToolFactory because that
