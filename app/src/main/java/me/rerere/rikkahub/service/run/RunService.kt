@@ -69,6 +69,14 @@ data class RunRequest(
     val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
     /** Optional mission coordinate for the journal. */
     val missionId: String? = null,
+    /**
+     * 批 A — reuse an existing conversation instead of creating a fresh one. Mission rounds run
+     * their whole life inside a single execution conversation, so every round after the first
+     * (and every system continuation) targets the mission's conversation. When null the run
+     * creates a new conversation exactly as before; an id that no longer resolves also falls
+     * back to a fresh conversation (callers needing strict existence checks do them first).
+     */
+    val conversationId: Uuid? = null,
     /** Which autonomous path is submitting (ledger discriminator, P5 Run-as-authority). */
     val kind: AgentRunKind = AgentRunKind.Cron,
     /** Per-kind domain id for the ledger; defaults to `run:<conversationId>`. */
@@ -101,6 +109,8 @@ data class RunHandle(
     val id: String,
     val conversationId: Uuid,
     val timeoutMs: Long,
+    /** 批 A — mission coordinate, echoed into the RUN_STARTED / RUN_FINISHED journal entries. */
+    val missionId: String? = null,
 )
 
 enum class RunStatus { COMPLETED, TIMED_OUT, FAILED, CANCELLED }

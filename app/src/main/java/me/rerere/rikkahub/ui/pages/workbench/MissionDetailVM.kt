@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.pages.workbench
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -9,6 +10,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.mission.Artifact
 import me.rerere.rikkahub.data.mission.ArtifactsRepository
 import me.rerere.rikkahub.data.mission.MissionEntity
+import me.rerere.rikkahub.data.mission.MissionExecutionState
 import me.rerere.rikkahub.data.mission.MissionRepository
 import me.rerere.rikkahub.data.mission.MissionSettlement
 import me.rerere.rikkahub.data.mission.MissionStatus
@@ -17,8 +19,12 @@ import me.rerere.rikkahub.data.runevent.RunEventEntity
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.data.runevent.RunEventType
+import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.mission.LaunchSource
+import me.rerere.rikkahub.service.mission.MissionLauncher
 import java.io.ByteArrayOutputStream
 import java.io.File
+import kotlin.uuid.Uuid
 
 class MissionDetailVM(
     private val missionId: String,
@@ -26,6 +32,8 @@ class MissionDetailVM(
     private val artifactsRepository: ArtifactsRepository,
     private val workspaceRepository: WorkspaceRepository,
     private val settingsStore: SettingsStore,
+    private val chatService: ChatService,
+    private val missionLauncher: MissionLauncher,
 ) : ViewModel() {
 
     val mission: StateFlow<MissionEntity?> = missionRepository.observeMission(missionId)
@@ -79,6 +87,47 @@ class MissionDetailVM(
     }
 
     // ------------------------------------------------------------------
+    // Batch A — run controls (launch / stop / relaunch)
+    // ------------------------------------------------------------------
+
+    /** One-shot launch failure message; consumed by the page via a toast, then cleared. */
+    val launchError = MutableStateFlow<String?>(null)
+
+    fun clearLaunchError() {
+        launchError.value = null
+    }
+
+    /** User-initiated stop: halt generation on the bound conversation and park the runtime. */
+    fun stopRun() {
+        viewModelScope.launch {
+            val m = mission.value ?: return@launch
+            val convId = m.conversationId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+                ?: return@launch
+            runCatching { chatService.stopGeneration(convId) }
+            missionRepository.logEvent(missionId, type = RunEventType.NOTE, title = "user_stop")
+            missionRepository.updateExecutionState(missionId, MissionExecutionState.IDLE)
+        }
+    }
+
+    /** First / manual launch of the mission (wish-style Create source). */
+    fun launchMission() {
+        viewModelScope.launch {
+            val o = missionLauncher.launch(missionId, LaunchSource.Create)
+            if (!o.ok) launchError.value = o.error
+        }
+    }
+
+    /** Restart a blocked mission: reset the auto-continue budget, re-activate, launch fresh. */
+    fun relaunch() {
+        viewModelScope.launch {
+            missionRepository.resetResumeCount(missionId)
+            missionRepository.transition(missionId, MissionStatus.ACTIVE)
+            val o = missionLauncher.launch(missionId, LaunchSource.Create)
+            if (!o.ok) launchError.value = o.error
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Batch 1 — artifact open / share (delivery loop)
     // ------------------------------------------------------------------
 
@@ -115,8 +164,10 @@ class MissionDetailVM(
         null
     }
 
-    /** Resolve the workspace bound to the mission's assistant, if any. */
+    /** Resolve the workspace bound to the mission, if any. */
     private suspend fun resolveWorkspaceId(): String? {
+        // The mission's own binding wins; fall back to its assistant's workspace.
+        mission.value?.workspaceId?.takeIf { it.isNotBlank() }?.let { return it }
         val assistantId = mission.value?.assistantId ?: return null
         val settings = settingsStore.settingsFlow.value
         val assistant = settings.assistants.firstOrNull { it.id.toString() == assistantId } ?: return null

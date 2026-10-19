@@ -75,14 +75,20 @@ class ChatServiceRunService(
      */
     override suspend fun submit(request: RunRequest): RunHandle {
         val effectiveTitle = request.title ?: "[Run] ${request.prompt.take(24)}"
-        val conv = Conversation.ofId(
+        // 批 A — a mission round may ask to reuse its execution conversation; anything else (or a
+        // stale id that no longer resolves) gets a fresh conversation, exactly as before.
+        val existingConversation = request.conversationId
+            ?.let { id -> runCatching { conversationRepo.getConversationById(id) }.getOrNull() }
+        val conv = existingConversation ?: Conversation.ofId(
             id = Uuid.random(),
             assistantId = request.assistantId,
             newConversation = true,
         ).copy(title = effectiveTitle, chatModelId = request.modelId)
 
         // Persist + wire the conversation into ChatService's generation machinery.
-        conversationRepo.insertConversation(conv)
+        if (existingConversation == null) {
+            conversationRepo.insertConversation(conv)
+        }
         chatService.initializeConversation(conv.id)
 
         // Mark headless so tool-call approvals are auto-granted — there is no human to ask.
@@ -113,6 +119,7 @@ class ChatServiceRunService(
             id = runId,
             conversationId = conv.id,
             timeoutMs = request.timeoutMs,
+            missionId = request.missionId,
         )
 
         runCatching {
@@ -200,6 +207,7 @@ class ChatServiceRunService(
                     payloadJson = result.failure?.let {
                         JsonInstant.encodeToString(buildJsonObject { put("failure", it) })
                     },
+                    missionId = handle.missionId,
                     conversationId = handle.conversationId.toString(),
                     runId = handle.id,
                 )
@@ -278,6 +286,7 @@ class ChatServiceRunService(
             id = runId,
             conversationId = conversationId,
             timeoutMs = RunRequest.DEFAULT_TIMEOUT_MS,
+            missionId = checkpoint.missionId,
         )
         runCatching {
             chatService.sendMessage(

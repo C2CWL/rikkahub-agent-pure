@@ -21,6 +21,7 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,10 +41,14 @@ import me.rerere.hugeicons.stroke.ChartColumn
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.subagent.SubAgentRun
 import me.rerere.rikkahub.subagent.SubAgentStatus
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.context.LocalToaster
+import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
@@ -61,6 +66,23 @@ fun WorkbenchDrawerContent(
     val doneToday by vm.doneToday.collectAsStateWithLifecycle()
     val activeSubAgents by vm.activeSubAgents.collectAsStateWithLifecycle()
     var showSheet by remember { mutableStateOf(false) }
+
+    // Create-form inputs + launch-failure surfacing (option: self-collected via Koin,
+    // keeps ChatPage's call site untouched).
+    val settingsStore: SettingsStore = koinInject()
+    val workspaceRepository: WorkspaceRepository = koinInject()
+    val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
+    val workspaces by workspaceRepository.listFlow().collectAsStateWithLifecycle(emptyList())
+    val launchError by vm.launchError.collectAsStateWithLifecycle()
+    val toaster = LocalToaster.current
+    val launchFailedLabel = stringResource(R.string.mission_launch_failed)
+    LaunchedEffect(launchError) {
+        val err = launchError
+        if (err != null) {
+            toaster.show("$launchFailedLabel: $err")
+            vm.clearLaunchError()
+        }
+    }
 
     ModalDrawerSheet(modifier = modifier.width(340.dp)) {
         Column(
@@ -245,11 +267,11 @@ fun WorkbenchDrawerContent(
     // ⑦ Create mission sheet
     if (showSheet) {
         CreateMissionSheet(
+            settings = settings,
+            workspaces = workspaces,
             onDismiss = { showSheet = false },
             defaultConversationId = currentConversationId,
-            onCreate = { title, description, acceptance, bindCurrent ->
-                vm.createMission(title, description, acceptance, if (bindCurrent) currentConversationId else null)
-            },
+            onCreate = { draft -> vm.createMission(draft) },
         )
     }
 }

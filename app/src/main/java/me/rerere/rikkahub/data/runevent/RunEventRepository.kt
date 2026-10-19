@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.runevent
 
 import android.util.Log
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicLong
@@ -49,6 +50,15 @@ class RunEventRepository(private val dao: RunEventDao) {
     /** All events produced by one execution run. */
     fun observeByRun(runId: String): Flow<List<RunEventEntity>> =
         dao.observeByRun(runId)
+
+    /**
+     * The newest [limit] events across all scopes, in ascending (chronological) order —
+     * the supervisor's replay window. Backed by the DAO's newest-first query; reversed
+     * here so consumers (e.g. [me.rerere.rikkahub.service.mission.MissionSupervisor])
+     * can process the tail in the order it happened.
+     */
+    fun observeRecent(limit: Int = 200): Flow<List<RunEventEntity>> =
+        dao.observeRecent(limit).map { it.asReversed() }
 
     // ------------------------------------------------------------------
     // Write surface

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -50,10 +51,12 @@ import me.rerere.hugeicons.stroke.Share08
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.mission.Artifact
 import me.rerere.rikkahub.data.mission.MissionEntity
+import me.rerere.rikkahub.data.mission.MissionExecutionState
 import me.rerere.rikkahub.data.mission.MissionSettlement
 import me.rerere.rikkahub.data.mission.MissionStatus
 import me.rerere.rikkahub.data.mission.acceptanceChecked
 import me.rerere.rikkahub.data.mission.acceptanceCriteria
+import me.rerere.rikkahub.data.mission.executionStateEnum
 import me.rerere.rikkahub.data.mission.statusEnum
 import me.rerere.rikkahub.ui.components.richtext.DiffAddedColor
 import me.rerere.rikkahub.ui.components.richtext.DiffRemovedColor
@@ -137,6 +140,33 @@ fun MissionCard(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
+                    when (mission.executionStateEnum) {
+                        MissionExecutionState.RUNNING -> {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                )
+                                Text(
+                                    text = stringResource(R.string.mission_exec_running),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                        MissionExecutionState.WAITING_APPROVAL -> {
+                            Text(
+                                text = stringResource(R.string.mission_exec_waiting_approval),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.tertiary,
+                            )
+                        }
+                        else -> {}
+                    }
                     StatusPill(status = mission.statusEnum)
                 }
                 Row(

@@ -182,4 +182,147 @@ class MissionRepositoryTest {
         val all = dao.observeAll().first()
         assertTrue(all.none { it.id == mission.id })
     }
+
+    // ------------------------------------------------------------------
+    // Batch A — task runtime: new mission columns, execution state, limits
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `create defaults the runtime fields — resumeCount 0, idle state, null config, balanced limits`() =
+        runBlocking {
+            val (dao, _, repo) = repo()
+            val mission = repo.create(title = "M-runtime-defaults")
+
+            // The repository-level one-shot read finds the same row the DAO holds.
+            val fetched = repo.getById(mission.id)
+            assertNotNull("repo.getById should find the mission", fetched)
+            assertEquals(mission.id, fetched!!.id)
+
+            val row = dao.getById(mission.id)!!
+            assertEquals(0, row.resumeCount)
+            assertEquals("idle", row.executionState)
+            assertEquals(MissionExecutionState.IDLE, row.executionStateEnum)
+            assertNull(row.workspaceId)
+            assertNull(row.approvalMode)
+            assertNull(row.limitsJson)
+            assertNull(row.lastRunId)
+            assertEquals(MissionLimits(), row.limits)
+            assertEquals(5, row.limits.maxResumeRounds)
+            assertEquals(2, row.limits.stallRounds)
+            assertEquals(500_000L, row.limits.tokenBudget)
+        }
+
+    @Test
+    fun `bumpResumeCount returns the incremented value and resetResumeCount zeroes it`() = runBlocking {
+        val (dao, _, repo) = repo()
+        val mission = repo.create(title = "M-resume")
+
+        assertEquals("first bump", 1, repo.bumpResumeCount(mission.id))
+        assertEquals("second bump", 2, repo.bumpResumeCount(mission.id))
+        assertEquals(2, dao.getById(mission.id)!!.resumeCount)
+
+        repo.resetResumeCount(mission.id)
+        assertEquals(0, dao.getById(mission.id)!!.resumeCount)
+        assertEquals("bump after reset", 1, repo.bumpResumeCount(mission.id))
+    }
+
+    @Test
+    fun `updateExecutionState writes state and lastRunId and advances updatedAt`() = runBlocking {
+        val (dao, _, repo) = repo()
+        val mission = repo.create(title = "M-exec-state")
+        val before = dao.getById(mission.id)!!
+
+        Thread.sleep(10) // let the wall clock move past the create() millisecond
+        repo.updateExecutionState(mission.id, MissionExecutionState.RUNNING, lastRunId = "run-abc")
+
+        val running = dao.getById(mission.id)!!
+        assertEquals(MissionExecutionState.RUNNING.name, running.executionState)
+        assertEquals(MissionExecutionState.RUNNING, running.executionStateEnum)
+        assertEquals("run-abc", running.lastRunId)
+        assertTrue("updatedAt must advance", running.updatedAt > before.updatedAt)
+
+        // lastRunId = null keeps the stored run id (posture-only updates don't clear it).
+        Thread.sleep(10)
+        repo.updateExecutionState(mission.id, MissionExecutionState.IDLE)
+        val idle = dao.getById(mission.id)!!
+        assertEquals(MissionExecutionState.IDLE, idle.executionStateEnum)
+        assertEquals("run-abc", idle.lastRunId)
+        assertTrue("updatedAt must advance again", idle.updatedAt > running.updatedAt)
+    }
+
+    @Test
+    fun `limits decoding falls back to defaults for null and malformed JSON, parses valid JSON`() =
+        runBlocking {
+            val (dao, _, repo) = repo()
+            val mission = repo.create(title = "M-limits-decode")
+            val base = dao.getById(mission.id)!!
+
+            // Absent (null) column → balanced defaults.
+            assertNull(base.limitsJson)
+            assertEquals(MissionLimits(), base.limits)
+
+            // Malformed JSON → decode failure is swallowed, defaults returned.
+            dao.upsert(base.copy(limitsJson = "{not-json"))
+            assertEquals(MissionLimits(), dao.getById(mission.id)!!.limits)
+
+            // Valid JSON → exact values (wire format pinned by a literal).
+            dao.upsert(
+                base.copy(limitsJson = """{"maxResumeRounds":9,"stallRounds":3,"tokenBudget":123456}""")
+            )
+            val decoded = dao.getById(mission.id)!!.limits
+            assertEquals(9, decoded.maxResumeRounds)
+            assertEquals(3, decoded.stallRounds)
+            assertEquals(123_456L, decoded.tokenBudget)
+        }
+
+    @Test
+    fun `updateLimits stores a per-mission override and null clears back to defaults`() = runBlocking {
+        val (dao, _, repo) = repo()
+        val mission = repo.create(title = "M-limits-update")
+
+        val custom = MissionLimits(maxResumeRounds = 2, stallRounds = 1, tokenBudget = 10_000L)
+        repo.updateLimits(mission.id, custom)
+
+        val stored = dao.getById(mission.id)!!
+        assertNotNull("override must be persisted as JSON", stored.limitsJson)
+        assertEquals(custom, stored.limits)
+
+        repo.updateLimits(mission.id, null)
+        val cleared = dao.getById(mission.id)!!
+        assertNull(cleared.limitsJson)
+        assertEquals(MissionLimits(), cleared.limits)
+    }
+
+    @Test
+    fun `updateConversation updateApprovalMode and updateWorkspaceAndAssistant persist and bump updatedAt`() =
+        runBlocking {
+            val (dao, _, repo) = repo()
+            val mission = repo.create(title = "M-config")
+            Thread.sleep(10)
+
+            repo.updateConversation(mission.id, "conv-42")
+            repo.updateApprovalMode(mission.id, "SEMI")
+            repo.updateWorkspaceAndAssistant(mission.id, "ws-1", "asst-9")
+
+            val row = dao.getById(mission.id)!!
+            assertEquals("conv-42", row.conversationId)
+            assertEquals("SEMI", row.approvalMode)
+            assertEquals("ws-1", row.workspaceId)
+            assertEquals("asst-9", row.assistantId)
+            assertTrue("writes must bump updatedAt", row.updatedAt > mission.updatedAt)
+        }
+
+    @Test
+    fun `updates against a missing mission id are safe no-ops`() = runBlocking {
+        val (_, _, repo) = repo()
+        assertNull(repo.getById("no-such-mission"))
+        repo.updateConversation("no-such-mission", "c-1")
+        repo.updateExecutionState("no-such-mission", MissionExecutionState.RUNNING, "run-x")
+        assertEquals(0, repo.bumpResumeCount("no-such-mission"))
+        repo.resetResumeCount("no-such-mission")
+        repo.updateLimits("no-such-mission", MissionLimits(maxResumeRounds = 1))
+        repo.updateApprovalMode("no-such-mission", "AUTO")
+        repo.updateWorkspaceAndAssistant("no-such-mission", "ws", "asst")
+        // Reaching the end without throwing is the assertion.
+    }
 }

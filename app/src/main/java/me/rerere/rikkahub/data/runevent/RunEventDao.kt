@@ -29,6 +29,15 @@ interface RunEventDao {
     @Query("SELECT * FROM run_events WHERE run_id = :runId ORDER BY created_at ASC")
     fun observeByRun(runId: String): Flow<List<RunEventEntity>>
 
+    /**
+     * The newest [limit] events across all scopes, newest first — the mission supervisor's
+     * journal-replay window (boot scan / run-finished subscription). Consumers that need
+     * chronological order read it through `RunEventRepository.observeRecent`, which flips
+     * this list back to ascending.
+     */
+    @Query("SELECT * FROM run_events ORDER BY created_at DESC LIMIT :limit")
+    fun observeRecent(limit: Int = 200): Flow<List<RunEventEntity>>
+
     @Query("DELETE FROM run_events WHERE mission_id = :missionId")
     suspend fun deleteByMission(missionId: String)
 

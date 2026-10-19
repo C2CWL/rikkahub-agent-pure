@@ -9,6 +9,11 @@ package me.rerere.rikkahub.data.agentrun
  * - **cron** runs are unattended and reproducible: if the conversation still exists and
  *   the run has only died once, resume it automatically. Twice means something is wrong
  *   with the environment (battery, permissions), so stop and tell the user.
+ * - **mission** runs (批 A) are the workbench's execution rounds. A round that was mid-run
+ *   when the process died carries on from its checkpoint exactly like cron — the mission
+ *   exists to run to its goal, so a single death must not end it. A second death hands off
+ *   to MissionSupervisor, which re-evaluates the mission as a whole (start a fresh round
+ *   with a handoff, or park it with a notification) instead of replaying a broken run.
  * - **telegram / sub-agent / workflow / external-automation** runs have side effects the
  *   recovery layer cannot safely replay (a chat message that may already have been
  *   delivered, a tool that may have half-run): report the breakpoint and let the user
@@ -32,7 +37,7 @@ enum class RunResumeDecision {
 object RunResumePolicy {
 
     /** Kinds whose execution is a pure conversation turn and therefore replay-safe. */
-    val AUTO_RESUMABLE_KINDS: Set<String> = setOf(AgentRunKind.Cron.wire)
+    val AUTO_RESUMABLE_KINDS: Set<String> = setOf(AgentRunKind.Cron.wire, AgentRunKind.Mission.wire)
 
     /** Synthetic kind for ordinary chat turns — checkpointed, never auto-resumed. */
     const val CHAT_KIND = "chat"

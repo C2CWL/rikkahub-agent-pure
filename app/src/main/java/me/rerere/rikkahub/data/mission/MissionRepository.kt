@@ -40,6 +40,13 @@ class MissionRepository(
         runEventRepository.observeByMission(missionId)
 
     /**
+     * One-shot read of the mission row — null when the mission does not exist.
+     * [observeMission] remains the Flow reader for UI; launcher / supervisor paths need
+     * a single current row without collecting a stream.
+     */
+    suspend fun getById(id: String): MissionEntity? = dao.getById(id)
+
+    /**
      * Create a new mission in [MissionStatus.ACTIVE] and log a [RunEventType.CREATED]
      * event. Returns the persisted entity.
      */
@@ -122,6 +129,136 @@ class MissionRepository(
             dao.upsert(
                 existing.copy(
                     acceptanceCheckedJson = JsonInstant.encodeToString(checked),
+                    updatedAt = System.currentTimeMillis(),
+                )
+            )
+        }
+    }
+
+    // ---------------------------------------------------------------------------------
+    // Batch A — mission runtime field updates (execution posture / circuit breaker / config).
+    // Each one is a read-modify-write under [writeMutex], stamps [MissionEntity.updatedAt],
+    // and is a safe no-op when the mission no longer exists.
+    // ---------------------------------------------------------------------------------
+
+    /**
+     * Persist the execution conversation id — written back after a launch creates (or
+     * reuses) the conversation the mission runs in.
+     */
+    suspend fun updateConversation(id: String, conversationId: String?) {
+        writeMutex.withLock {
+            val existing = dao.getById(id) ?: return@withLock
+            dao.upsert(
+                existing.copy(
+                    conversationId = conversationId,
+                    updatedAt = System.currentTimeMillis(),
+                )
+            )
+        }
+    }
+
+    /**
+     * Update the runtime execution posture ([MissionExecutionState], stored by name) and,
+     * when non-null, [lastRunId]. A null [lastRunId] leaves the stored run id untouched —
+     * posture-only updates (e.g. RUNNING -> IDLE after a run ends) must not drop the
+     * reference to the latest run. Safe no-op when the mission does not exist.
+     */
+    suspend fun updateExecutionState(
+        id: String,
+        state: MissionExecutionState,
+        lastRunId: String? = null,
+    ) {
+        writeMutex.withLock {
+            val existing = dao.getById(id) ?: return@withLock
+            dao.upsert(
+                existing.copy(
+                    executionState = state.name,
+                    lastRunId = lastRunId ?: existing.lastRunId,
+                    updatedAt = System.currentTimeMillis(),
+                )
+            )
+        }
+    }
+
+    /**
+     * Increment [MissionEntity.resumeCount] and return the value after the increment —
+     * the auto-continue round the supervisor is about to start. Returns 0 when the
+     * mission does not exist (nothing was persisted).
+     */
+    suspend fun bumpResumeCount(id: String): Int {
+        var newValue = 0
+        writeMutex.withLock {
+            val existing = dao.getById(id) ?: return@withLock
+            newValue = existing.resumeCount + 1
+            dao.upsert(
+                existing.copy(
+                    resumeCount = newValue,
+                    updatedAt = System.currentTimeMillis(),
+                )
+            )
+        }
+        return newValue
+    }
+
+    /**
+     * Reset [MissionEntity.resumeCount] to zero — the user took over / restarted the
+     * mission manually, so the auto-continue budget starts fresh.
+     */
+    suspend fun resetResumeCount(id: String) {
+        writeMutex.withLock {
+            val existing = dao.getById(id) ?: return@withLock
+            dao.upsert(
+                existing.copy(
+                    resumeCount = 0,
+                    updatedAt = System.currentTimeMillis(),
+                )
+            )
+        }
+    }
+
+    /**
+     * Store the per-mission runtime limits as [MissionEntity.limitsJson]; null clears the
+     * override so [MissionEntity.limits] falls back to the balanced defaults.
+     */
+    suspend fun updateLimits(id: String, limits: MissionLimits?) {
+        writeMutex.withLock {
+            val existing = dao.getById(id) ?: return@withLock
+            dao.upsert(
+                existing.copy(
+                    limitsJson = limits?.let { JsonInstant.encodeToString(it) },
+                    updatedAt = System.currentTimeMillis(),
+                )
+            )
+        }
+    }
+
+    /**
+     * Store the per-mission approval posture ([MissionEntity.approvalMode]); null means
+     * "inherit the global setting".
+     */
+    suspend fun updateApprovalMode(id: String, mode: String?) {
+        writeMutex.withLock {
+            val existing = dao.getById(id) ?: return@withLock
+            dao.upsert(
+                existing.copy(
+                    approvalMode = mode,
+                    updatedAt = System.currentTimeMillis(),
+                )
+            )
+        }
+    }
+
+    /**
+     * Bind (or rebind) the execution workspace and assistant in one write — the create
+     * sheet pairs them, and callers should not interleave two partial updates.
+     */
+    suspend fun updateWorkspaceAndAssistant(id: String, workspaceId: String?, assistantId: String?) {
+        writeMutex.withLock {
+            val existing = dao.getById(id) ?: return@withLock
+            dao.upsert(
+                existing.copy(
+                    workspaceId = workspaceId,
+                    assistantId = assistantId,
                     updatedAt = System.currentTimeMillis(),
                 )
             )

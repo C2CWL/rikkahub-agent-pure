@@ -187,6 +187,10 @@ class RikkaHubApp : Application() {
         // makes background sub-agents survivable across process death.
         runAgentRunBootRecovery()
 
+        // 批 A — mission supervisor: keeps workbench missions moving (auto-continues the
+        // rounds that stopped before their goal, parks the ones that need a human).
+        runMissionSupervisor()
+
         // Close reasoning parts a dead process left open. A stream killed mid-flight (process
         // reclaimed in the background, an install, a crash) persists its partial message with the
         // reasoning part still open, and the chat then renders "thinking for N seconds" on that
@@ -311,6 +315,26 @@ class RikkaHubApp : Application() {
                 get<me.rerere.rikkahub.data.agentrun.AgentRunBootRecovery>().runRecovery()
             }.onFailure {
                 Log.w(TAG, "runAgentRunBootRecovery failed", it)
+            }
+        }
+    }
+
+    /**
+     * 批 A — start the mission supervisor (兜底督导): subscribe to run-finished journal
+     * events, then run the boot orphan scan a beat later so the P5 boot recovery gets the
+     * first crack at stranded mission rounds (the supervisor evaluates whatever P5 left).
+     * Best-effort on IO off [AppScope], failures swallowed — the same contract as
+     * [runAgentRunBootRecovery].
+     */
+    private fun runMissionSupervisor() {
+        get<AppScope>().launch(Dispatchers.IO) {
+            runCatching {
+                val supervisor = get<me.rerere.rikkahub.service.mission.MissionSupervisor>()
+                supervisor.start()
+                delay(3_000)
+                supervisor.onBoot()
+            }.onFailure {
+                Log.w(TAG, "runMissionSupervisor failed", it)
             }
         }
     }

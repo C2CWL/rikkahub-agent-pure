@@ -23,6 +23,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -39,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,13 +67,17 @@ import me.rerere.hugeicons.stroke.Copy01
 import me.rerere.hugeicons.stroke.Clipboard
 import me.rerere.hugeicons.stroke.BookOpen01
 import me.rerere.hugeicons.stroke.Wrench01
+import me.rerere.hugeicons.stroke.StopCircle
+import me.rerere.hugeicons.stroke.Refresh03
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.mission.Artifact
+import me.rerere.rikkahub.data.mission.MissionExecutionState
 import me.rerere.rikkahub.data.mission.MissionStatus
 import me.rerere.rikkahub.data.runevent.RunEventEntity
 import me.rerere.rikkahub.data.runevent.RunEventType
 import me.rerere.rikkahub.data.mission.acceptanceChecked
 import me.rerere.rikkahub.data.mission.acceptanceCriteria
+import me.rerere.rikkahub.data.mission.executionStateEnum
 import me.rerere.rikkahub.data.mission.statusEnum
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
@@ -98,6 +104,15 @@ fun MissionDetailPage(missionId: String) {
     var menuExpanded by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showNoteDialog by remember { mutableStateOf(false) }
+
+    // Batch A — surface launch failures (validation refusals from MissionLauncher) as toasts.
+    val launchError by vm.launchError.collectAsStateWithLifecycle()
+    LaunchedEffect(launchError) {
+        launchError?.let {
+            toaster.show(it)
+            vm.clearLaunchError()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -214,6 +229,82 @@ fun MissionDetailPage(missionId: String) {
             settlement?.let { s ->
                 item {
                     SettlementCard(settlement = s)
+                }
+            }
+
+            // ①c Run zone (batch A — runtime controls) + done summary
+            mission?.let { m ->
+                val status = m.statusEnum
+                val exec = m.executionStateEnum
+                if (status == MissionStatus.DONE) {
+                    item {
+                        DoneSummaryCard(events = events)
+                    }
+                } else if (status != MissionStatus.REVIEW && status != MissionStatus.ARCHIVED) {
+                    when {
+                        exec == MissionExecutionState.RUNNING -> {
+                            item {
+                                RunZoneCard(
+                                    badgeRes = R.string.mission_run_running,
+                                    badgeColor = MaterialTheme.colorScheme.primary,
+                                    showDot = true,
+                                    currentAction = events
+                                        .filter { it.type == RunEventType.TOOL_RESULT.name }
+                                        .maxByOrNull { it.createdAt }
+                                        ?.title,
+                                    primaryAction = false,
+                                    actionLabel = stringResource(R.string.mission_run_stop),
+                                    actionIcon = HugeIcons.StopCircle,
+                                    onAction = { vm.stopRun() },
+                                )
+                            }
+                        }
+
+                        exec == MissionExecutionState.WAITING_APPROVAL -> {
+                            item {
+                                RunZoneCard(
+                                    badgeRes = R.string.mission_run_waiting_approval,
+                                    badgeColor = MaterialTheme.colorScheme.tertiary,
+                                    showDot = true,
+                                    currentAction = null,
+                                    primaryAction = false,
+                                    actionLabel = stringResource(R.string.mission_run_stop),
+                                    actionIcon = HugeIcons.StopCircle,
+                                    onAction = { vm.stopRun() },
+                                )
+                            }
+                        }
+
+                        status == MissionStatus.ACTIVE && exec == MissionExecutionState.IDLE -> {
+                            item {
+                                RunZoneCard(
+                                    badgeRes = R.string.mission_run_ready,
+                                    badgeColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    showDot = false,
+                                    currentAction = null,
+                                    primaryAction = true,
+                                    actionLabel = stringResource(R.string.mission_run_start),
+                                    actionIcon = null,
+                                    onAction = { vm.launchMission() },
+                                )
+                            }
+                        }
+
+                        exec == MissionExecutionState.BLOCKED || status == MissionStatus.BLOCKED -> {
+                            item {
+                                RunZoneCard(
+                                    badgeRes = R.string.mission_run_blocked,
+                                    badgeColor = MaterialTheme.colorScheme.error,
+                                    showDot = false,
+                                    currentAction = null,
+                                    primaryAction = false,
+                                    actionLabel = stringResource(R.string.mission_run_relaunch),
+                                    actionIcon = HugeIcons.Refresh03,
+                                    onAction = { vm.relaunch() },
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -485,6 +576,134 @@ fun MissionDetailPage(missionId: String) {
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun RunZoneCard(
+    badgeRes: Int,
+    badgeColor: Color,
+    /** Show the pulsing-dot style badge (RUNNING / WAITING_APPROVAL). */
+    showDot: Boolean,
+    currentAction: String?,
+    /** Filled Button (start) vs OutlinedButton (stop / relaunch). */
+    primaryAction: Boolean,
+    actionLabel: String,
+    actionIcon: androidx.compose.ui.graphics.vector.ImageVector?,
+    onAction: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (showDot) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(badgeColor, CircleShape)
+                    )
+                }
+                Text(
+                    text = stringResource(badgeRes),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = badgeColor,
+                )
+            }
+            if (currentAction != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        imageVector = HugeIcons.Wrench01,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = stringResource(R.string.mission_run_current_action, currentAction),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (primaryAction) {
+                Button(onClick = onAction, modifier = Modifier.fillMaxWidth()) {
+                    Text(text = actionLabel)
+                }
+            } else {
+                OutlinedButton(onClick = onAction, modifier = Modifier.fillMaxWidth()) {
+                    if (actionIcon != null) {
+                        Icon(
+                            imageVector = actionIcon,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                    Text(
+                        text = actionLabel,
+                        modifier = Modifier.padding(start = if (actionIcon != null) 8.dp else 0.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Extract the human summary from a `mission_report: done` NOTE payload's `"note":"..."` field. */
+private fun extractReportNote(payloadJson: String?): String? {
+    if (payloadJson.isNullOrBlank()) return null
+    val match = Regex(""""note"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(payloadJson) ?: return null
+    return match.groupValues[1]
+        .replace("\\n", "\n")
+        .replace("\\\"", "\"")
+        .replace("\\\\", "\\")
+        .takeIf { it.isNotBlank() }
+}
+
+@Composable
+private fun DoneSummaryCard(events: List<RunEventEntity>) {
+    val report = events
+        .filter { it.type == RunEventType.NOTE.name && it.title == "mission_report: done" }
+        .maxByOrNull { it.createdAt }
+    val summary = extractReportNote(report?.payloadJson)
+        ?: report?.detail?.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.mission_done_fallback)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.mission_done_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = stringResource(R.string.mission_done_summary_title),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
     }
 }
 

@@ -4,6 +4,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 import me.rerere.rikkahub.runtime.util.JsonInstant
 
 /**
@@ -30,6 +31,21 @@ enum class MissionStatus(val isTerminal: Boolean) {
         DONE -> to == ARCHIVED
         ARCHIVED -> false
     }
+}
+
+/**
+ * 批 A — execution posture of a mission, stored as the name in [MissionEntity.executionState].
+ *
+ * Kept separate from [MissionStatus] on purpose: status is the *workflow* state the user
+ * manages (active → blocked/review → done), while this tracks what the runtime is doing
+ * right now (idle / a run in flight / parked on a tool approval / stopped by the circuit
+ * breaker). One mission can be ACTIVE status while its execution state cycles many times.
+ */
+enum class MissionExecutionState {
+    IDLE,
+    RUNNING,
+    WAITING_APPROVAL,
+    BLOCKED,
 }
 
 /**
@@ -75,6 +91,27 @@ data class MissionEntity(
     val updatedAt: Long,
     @ColumnInfo("completed_at")
     val completedAt: Long? = null,
+    // -------------------------------------------------------------------------------------
+    // 批 A（任务运行时，v35）— execution & configuration columns
+    // -------------------------------------------------------------------------------------
+    /** Execution workspace (WorkspaceEntity.id); null = not bound to a workspace. */
+    @ColumnInfo("workspace_id")
+    val workspaceId: String? = null,
+    /** Per-mission approval posture (ApprovalMode name); null = inherit the global setting. */
+    @ColumnInfo("approval_mode")
+    val approvalMode: String? = null,
+    /** Per-mission runtime-limit overrides ([MissionLimits] JSON); null = global defaults. */
+    @ColumnInfo("limits_json")
+    val limitsJson: String? = null,
+    /** Auto-continue rounds already consumed (circuit-breaker counter; reset on user action). */
+    @ColumnInfo("resume_count", defaultValue = "0")
+    val resumeCount: Int = 0,
+    /** Latest execution run id (= agent_runs.id); null before the first launch. */
+    @ColumnInfo("last_run_id")
+    val lastRunId: String? = null,
+    /** Execution posture, stored as [MissionExecutionState]'s name. Default "idle". */
+    @ColumnInfo("execution_state", defaultValue = "idle")
+    val executionState: String = "idle",
 )
 
 // ---------------------------------------------------------------------------
@@ -97,3 +134,33 @@ val MissionEntity.acceptanceChecked: List<Int>
     get() = runCatching {
         JsonInstant.decodeFromString<List<Int>>(acceptanceCheckedJson)
     }.getOrDefault(emptyList())
+
+/**
+ * 批 A — per-mission runtime limits with balanced defaults ("均衡值"), overridable per mission
+ * via [MissionEntity.limitsJson] and globally via the task settings screen.
+ *
+ * - [maxResumeRounds]: the auto-continue circuit breaker — how many extra rounds the supervisor
+ *   may start after a round ends without a done/blocked signal.
+ * - [stallRounds]: consecutive no-progress rounds (no new artifact, no tool result) that stop
+ *   the loop even before [maxResumeRounds] is reached.
+ * - [tokenBudget]: cumulative token ceiling for the whole mission (checked when the usage
+ *   aggregation lands; kept here so the wire format does not change later).
+ */
+@Serializable
+data class MissionLimits(
+    val maxResumeRounds: Int = 5,
+    val stallRounds: Int = 2,
+    val tokenBudget: Long = 500_000L,
+)
+
+/** Decode [MissionEntity.limitsJson]; null / blank / malformed → balanced defaults. */
+val MissionEntity.limits: MissionLimits
+    get() = runCatching {
+        limitsJson?.takeIf { it.isNotBlank() }
+                ?.let { JsonInstant.decodeFromString<MissionLimits>(it) }
+    }.getOrNull() ?: MissionLimits()
+
+/** Decode [MissionEntity.executionState] into a [MissionExecutionState], defaulting to [MissionExecutionState.IDLE]. */
+val MissionEntity.executionStateEnum: MissionExecutionState
+    get() = MissionExecutionState.entries.firstOrNull { it.name == executionState }
+        ?: MissionExecutionState.IDLE

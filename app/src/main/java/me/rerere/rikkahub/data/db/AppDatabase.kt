@@ -75,7 +75,7 @@ import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
         RunEventEntity::class,
         RunCheckpointEntity::class,
     ],
-    version = 34,
+    version = 35,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -136,6 +136,11 @@ import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
         // v32, so no user data is lost. run_events is created by Room's auto-diff.
         AutoMigration(from = 32, to = 33, spec = Migration_32_33::class),
         AutoMigration(from = 33, to = 34),
+        // v35 (批 A, mission runtime): six execution/configuration columns on `missions`
+        // (workspace, approval mode, limits, resume counter, last run, execution state).
+        // Pure nullable/defaulted additions, so Room's auto-diff handles them; the
+        // backup-restore path backfills them in ImportedDatabaseReconciler.
+        AutoMigration(from = 34, to = 35),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)

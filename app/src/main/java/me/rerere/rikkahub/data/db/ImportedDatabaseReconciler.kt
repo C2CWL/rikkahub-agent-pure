@@ -54,15 +54,15 @@ object ImportedDatabaseReconciler {
 
     /**
      * Room's schema version and identity hash for [AppDatabase]. Both are copied verbatim
-     * from app/schemas/me.rerere.rikkahub.data.db.AppDatabase/33.json (the identity hash also
+     * from app/schemas/me.rerere.rikkahub.data.db.AppDatabase/35.json (the identity hash also
      * appears in the generated AppDatabase_Impl RoomOpenDelegate). When the schema version is
      * bumped, update BOTH constants (and the table DDL below if the fork-only tables changed,
      * BACKFILL_INDEX_DDL if any entity gained/lost an index, and MODERN_COLUMN_SENTINELS if
      * newer *shared* conversation columns were added) or this reconciliation will silently stop
      * matching. `internal` so a JVM test can assert these stay in sync with the schema export.
      */
-    internal const val EXPECTED_VERSION = 34
-    internal const val EXPECTED_IDENTITY_HASH = "3ba5a215513b8c21a09df3edd0e28707"
+    internal const val EXPECTED_VERSION = 35
+    internal const val EXPECTED_IDENTITY_HASH = "9540ddedc97486b95bca16a8aa96d94a"
 
     /**
      * Columns that a restored file must already have for its shared schema to be considered
@@ -87,6 +87,22 @@ object ImportedDatabaseReconciler {
         "ALTER TABLE `workspaces` ADD COLUMN `shell_compatibility_mode` INTEGER NOT NULL DEFAULT 0"
 
     /**
+     * v35 (批 A) adds six runtime columns to `missions` through the 34->35 auto-migration. A
+     * v32..v34 moxw backup carries the table without them, and the "already current" stamp
+     * below skips the auto-migration (same reasoning as [SHELL_COMPATIBILITY_MODE_DDL]), so
+     * each missing column is added here. The DDL mirrors what Room's auto-migration emits; a
+     * column guard keeps re-runs a no-op (bare ALTER ... ADD COLUMN is not idempotent).
+     */
+    private val MISSION_V35_COLUMN_DDL: List<Pair<String, String>> = listOf(
+        "workspace_id" to "ALTER TABLE `missions` ADD COLUMN `workspace_id` TEXT",
+        "approval_mode" to "ALTER TABLE `missions` ADD COLUMN `approval_mode` TEXT",
+        "limits_json" to "ALTER TABLE `missions` ADD COLUMN `limits_json` TEXT",
+        "resume_count" to "ALTER TABLE `missions` ADD COLUMN `resume_count` INTEGER NOT NULL DEFAULT 0",
+        "last_run_id" to "ALTER TABLE `missions` ADD COLUMN `last_run_id` TEXT",
+        "execution_state" to "ALTER TABLE `missions` ADD COLUMN `execution_state` TEXT NOT NULL DEFAULT 'idle'",
+    )
+
+    /**
      * Fork-only tables absent from an upstream backup, with their exact v25 create + index
      * statements. Every statement is IF NOT EXISTS so running it against a genuine agent
      * backup (where the tables already exist) is a no-op.
@@ -104,10 +120,10 @@ object ImportedDatabaseReconciler {
         "CREATE INDEX IF NOT EXISTS `idx_runs_kind_dom` ON `agent_runs` (`kind`, `domain_id`)",
         "CREATE INDEX IF NOT EXISTS `idx_runs_parent` ON `agent_runs` (`parent_run_id`)",
         "CREATE INDEX IF NOT EXISTS `idx_runs_updated_at` ON `agent_runs` (`updated_at_ms`)",
-        // v32 workbench tables (verbatim from 33.json): a v31 moxw backup carries no mission
-        // tables, and the "already current" stamp below would skip the auto-migration that
-        // creates them — the DAOs would then hit "no such table: missions" on first launch.
-        "CREATE TABLE IF NOT EXISTS `missions` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `description` TEXT NOT NULL, `status` TEXT NOT NULL, `acceptance_json` TEXT NOT NULL, `acceptance_checked_json` TEXT NOT NULL, `conversation_id` TEXT, `assistant_id` TEXT, `artifact_count` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, `completed_at` INTEGER, PRIMARY KEY(`id`))",
+        // v32 workbench tables (create statement refreshed to the v35 column set — a restored
+        // pre-v35 file that already has the table is covered by the ALTER backfill below; a
+        // file with no missions table at all gets the full current shape here).
+        "CREATE TABLE IF NOT EXISTS `missions` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `description` TEXT NOT NULL, `status` TEXT NOT NULL, `acceptance_json` TEXT NOT NULL, `acceptance_checked_json` TEXT NOT NULL, `conversation_id` TEXT, `assistant_id` TEXT, `artifact_count` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, `completed_at` INTEGER, `workspace_id` TEXT, `approval_mode` TEXT, `limits_json` TEXT, `resume_count` INTEGER NOT NULL DEFAULT 0, `last_run_id` TEXT, `execution_state` TEXT NOT NULL DEFAULT 'idle', PRIMARY KEY(`id`))",
         "CREATE INDEX IF NOT EXISTS `index_missions_status` ON `missions` (`status`)",
         "CREATE INDEX IF NOT EXISTS `index_missions_conversation_id` ON `missions` (`conversation_id`)",
         "CREATE INDEX IF NOT EXISTS `index_missions_updated_at` ON `missions` (`updated_at`)",
@@ -211,6 +227,16 @@ object ImportedDatabaseReconciler {
                             !hasColumn(db, "workspaces", "shell_compatibility_mode")
                         ) {
                             db.execSQL(SHELL_COMPATIBILITY_MODE_DDL)
+                        }
+                        // v35 — backfill the mission runtime columns for a restored v32..v34 file
+                        // whose `missions` table predates them. (When the table did not exist at
+                        // all, FORK_ONLY_DDL above already created it with the full v35 shape.)
+                        if (tableExists(db, "missions")) {
+                            MISSION_V35_COLUMN_DDL.forEach { (column, ddl) ->
+                                if (!hasColumn(db, "missions", column)) {
+                                    db.execSQL(ddl)
+                                }
+                            }
                         }
                         // No migration should run: the file is either already stamped at the
                         // fork's version, or it is an upstream file whose shared schema already

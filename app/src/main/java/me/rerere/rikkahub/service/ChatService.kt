@@ -95,6 +95,7 @@ import me.rerere.rikkahub.data.ai.tools.ToolCatalogSource
 import me.rerere.rikkahub.data.ai.tools.ToolRankFusion
 import me.rerere.rikkahub.data.ai.tools.LocalToolGates
 import me.rerere.rikkahub.data.ai.tools.LocalToolPalette
+import me.rerere.rikkahub.data.ai.tools.buildMissionReportTool
 import me.rerere.rikkahub.data.ai.tools.buildToolCatalogTools
 import me.rerere.rikkahub.data.ai.tools.ToolSearchAnswer
 import me.rerere.rikkahub.data.ai.tools.ChatToolFactory
@@ -1638,6 +1639,30 @@ class ChatService(
                 definitions = localTools.expertDefinitionsBlocking(),
             )
         )
+        // 批 A — mission_report: the task-mode signal tool. Registered only inside a mission
+        // execution session (MissionSessions knows the conversation); inert everywhere else,
+        // mirroring mission_dispatch's registration shape so the regenerate path sees the
+        // same surface the first pass had. The report lambda persists the signal as a NOTE
+        // event the MissionSupervisor consumes.
+        if (runCatching { me.rerere.rikkahub.service.mission.MissionSessions.missionIdFor(conversationId.toString()) }.getOrNull() != null) {
+            add(
+                buildMissionReportTool { status, note ->
+                    runCatching {
+                        missionEngine.reportSignal(
+                            conversationId = conversationId.toString(),
+                            runId = me.rerere.rikkahub.service.run.ConversationRunRegistry.runIdFor(conversationId),
+                            status = status,
+                            note = note,
+                        )
+                    }
+                    when (status) {
+                        "done" -> "已记录：任务完成信号已上报，系统将执行完成处理并通知用户。"
+                        "blocked" -> "已记录：任务阻塞已上报，用户会收到通知。"
+                        else -> "已记录：进展已写入任务时间线。"
+                    }
+                }
+            )
+        }
         // P5 — history search. Registered here rather than in ChatToolFactory because that
         // factory's createTools has no callers in the repository: the model never actually had
         // this tool in the chat path. Gated on the same flag the static recent-chats reference
@@ -2059,6 +2084,27 @@ class ChatService(
                 definitions = localTools.expertDefinitionsBlocking(),
             )
         )
+        // 批 A — mission_report, mirroring the regenerate path above so both build paths
+        // expose the same surface. Inert outside mission execution sessions.
+        if (runCatching { me.rerere.rikkahub.service.mission.MissionSessions.missionIdFor(conversationId.toString()) }.getOrNull() != null) {
+            add(
+                buildMissionReportTool { status, note ->
+                    runCatching {
+                        missionEngine.reportSignal(
+                            conversationId = conversationId.toString(),
+                            runId = me.rerere.rikkahub.service.run.ConversationRunRegistry.runIdFor(conversationId),
+                            status = status,
+                            note = note,
+                        )
+                    }
+                    when (status) {
+                        "done" -> "已记录：任务完成信号已上报，系统将执行完成处理并通知用户。"
+                        "blocked" -> "已记录：任务阻塞已上报，用户会收到通知。"
+                        else -> "已记录：进展已写入任务时间线。"
+                    }
+                }
+            )
+        }
         // P5 — history search. Registered here rather than in ChatToolFactory because that
         // factory's createTools has no callers in the repository: the model never actually had
         // this tool in the chat path. Gated on the same flag the static recent-chats reference

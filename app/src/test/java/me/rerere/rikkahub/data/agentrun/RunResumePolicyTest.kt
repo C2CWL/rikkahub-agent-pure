@@ -52,15 +52,26 @@ class RunResumePolicyTest {
     }
 
     @Test
-    fun `a second death hands off to the user`() {
+    fun `mission rounds resume automatically on the first interruption`() {
         assertEquals(
-            RunResumeDecision.HAND_OFF,
-            RunResumePolicy.decide(
-                kind = "cron",
-                checkpoint = checkpoint(attempts = RunCheckpointDefaults.MAX_AUTO_RESUME_ATTEMPTS),
-                conversationExists = true,
-            ),
+            RunResumeDecision.AUTO_RESUME,
+            RunResumePolicy.decide(kind = "mission", checkpoint = checkpoint(), conversationExists = true),
         )
+    }
+
+    @Test
+    fun `a second death hands off to the user`() {
+        for (kind in listOf("cron", "mission")) {
+            assertEquals(
+                "kind=$kind",
+                RunResumeDecision.HAND_OFF,
+                RunResumePolicy.decide(
+                    kind = kind,
+                    checkpoint = checkpoint(attempts = RunCheckpointDefaults.MAX_AUTO_RESUME_ATTEMPTS),
+                    conversationExists = true,
+                ),
+            )
+        }
     }
 
     @Test

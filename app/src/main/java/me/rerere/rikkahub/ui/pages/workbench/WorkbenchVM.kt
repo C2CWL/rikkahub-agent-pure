@@ -2,15 +2,19 @@ package me.rerere.rikkahub.ui.pages.workbench
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.mission.MissionEntity
+import me.rerere.rikkahub.data.mission.MissionLimits
 import me.rerere.rikkahub.data.mission.MissionRepository
 import me.rerere.rikkahub.data.mission.MissionStatus
 import me.rerere.rikkahub.data.mission.statusEnum
+import me.rerere.rikkahub.service.mission.LaunchSource
+import me.rerere.rikkahub.service.mission.MissionLauncher
 import me.rerere.rikkahub.subagent.SubAgentRegistry
 import me.rerere.rikkahub.subagent.SubAgentRun
 import me.rerere.rikkahub.subagent.SubAgentStatus
@@ -18,6 +22,7 @@ import java.util.Calendar
 
 class WorkbenchVM(
     private val missionRepository: MissionRepository,
+    private val missionLauncher: MissionLauncher,
     subAgentRegistry: SubAgentRegistry,
 ) : ViewModel() {
 
@@ -64,14 +69,36 @@ class WorkbenchVM(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    fun createMission(title: String, description: String, acceptance: List<String>, conversationId: String? = null) {
+    val launchError = MutableStateFlow<String?>(null)
+
+    fun clearLaunchError() {
+        launchError.value = null
+    }
+
+    fun createMission(draft: MissionDraft) {
         viewModelScope.launch {
-            missionRepository.create(
-                title = title,
-                description = description,
-                acceptance = acceptance,
-                conversationId = conversationId,
+            val mission = missionRepository.create(
+                title = draft.title,
+                description = draft.description,
+                acceptance = draft.goals,
+                conversationId = null,
             )
+            missionRepository.updateWorkspaceAndAssistant(mission.id, draft.workspaceId, draft.assistantId)
+            draft.approvalMode?.let { missionRepository.updateApprovalMode(mission.id, it) }
+            if (draft.maxResumeRounds != null || draft.stallRounds != null || draft.tokenBudget != null) {
+                missionRepository.updateLimits(
+                    mission.id,
+                    MissionLimits(
+                        maxResumeRounds = draft.maxResumeRounds ?: 5,
+                        stallRounds = draft.stallRounds ?: 2,
+                        tokenBudget = draft.tokenBudget ?: 500_000L,
+                    )
+                )
+            }
+            val outcome = missionLauncher.launch(mission.id, LaunchSource.Create)
+            if (!outcome.ok) {
+                launchError.value = outcome.error
+            }
         }
     }
 

@@ -152,6 +152,8 @@ class RunEventRepositoryTest {
 
             override fun observeByRun(runId: String) = backing.observeByRun(runId)
 
+            override fun observeRecent(limit: Int) = backing.observeRecent(limit)
+
             override suspend fun deleteByMission(missionId: String) = backing.deleteByMission(missionId)
 
             override suspend fun trimByMission(missionId: String, keep: Int) = backing.trimByMission(missionId, keep)

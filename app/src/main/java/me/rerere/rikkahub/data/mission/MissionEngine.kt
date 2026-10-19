@@ -233,6 +233,47 @@ class MissionEngine(
     }
 
     /**
+     * 批 A — persist one `mission_report` signal from the model's signal tool.
+     *
+     * Called by the `mission_report` tool assembly (ChatService) with the current
+     * conversation + run coordinates. Writes a NOTE event in the exact shape the
+     * MissionSupervisor consumes for its continue/stop decision:
+     *
+     *   type = NOTE, title = "mission_report: {status}",
+     *   payloadJson = {"mission_signal": "{status}", "note": "..."} (note omitted when blank)
+     *
+     * `status` is expected to be `done`, `blocked` or `progress`; anything else is stored
+     * verbatim (the supervisor reads only the three known values).
+     *
+     * Best-effort like every other method here — reporting a signal must never break the
+     * generation loop, and a conversation with no bound mission is a silent no-op.
+     */
+    suspend fun reportSignal(
+        conversationId: String,
+        runId: String?,
+        status: String,
+        note: String?,
+    ) {
+        runCatching {
+            val missionId = missionIdFor(conversationId) ?: return@runCatching
+            runEventRepository.emit(
+                type = RunEventType.NOTE,
+                title = "mission_report: $status",
+                detail = note?.takeIf { it.isNotBlank() },
+                payloadJson = JsonInstant.encodeToString(
+                    buildJsonObject {
+                        put("mission_signal", status)
+                        note?.takeIf { it.isNotBlank() }?.let { put("note", it) }
+                    }
+                ),
+                missionId = missionId,
+                conversationId = conversationId,
+                runId = runId,
+            )
+        }.onFailure { Log.w(TAG, "reportSignal failed for $conversationId", it) }
+    }
+
+    /**
      * Extract the `path` field from a tool's args JSON string.
      * Returns null if the JSON is invalid or has no `path` field.
      */

@@ -61,6 +61,8 @@ val viewModelModule = module {
             artifactsRepository = get(),
             workspaceRepository = get(),
             settingsStore = get(),
+            chatService = get(),
+            missionLauncher = get(),
         )
     }
     viewModelOf(::SettingVM)

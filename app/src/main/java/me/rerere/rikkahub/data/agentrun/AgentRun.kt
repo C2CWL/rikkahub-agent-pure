@@ -147,7 +147,14 @@ enum class AgentRunKind(val wire: String) {
      * id/uuid, and (for deletions) how many assistants referenced it — never an api key, a
      * base URL or any provider secret.
      */
-    ModelWrite("model_write");
+    ModelWrite("model_write"),
+
+    /**
+     * 批 A — a workbench mission execution round, submitted by MissionLauncher / MissionSupervisor.
+     * `domainId` = mission id. One mission owns many rounds (resume/continue), each opening its
+     * own ledger row; the mission coordinate also rides in the row metadata and the journals.
+     */
+    Mission("mission");
 
     companion object {
         fun fromWire(wire: String?): AgentRunKind? = entries.firstOrNull { it.wire == wire }

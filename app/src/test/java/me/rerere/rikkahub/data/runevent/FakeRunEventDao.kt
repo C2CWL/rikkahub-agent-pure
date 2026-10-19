@@ -43,6 +43,11 @@ class FakeRunEventDao : RunEventDao {
     override fun observeByRun(runId: String): Flow<List<RunEventEntity>> =
         eventsFlow.map { list -> list.filter { it.runId == runId } }
 
+    // Mirrors the real query "ORDER BY created_at DESC LIMIT :limit": the newest `limit`
+    // rows, newest first. The backing list is kept ascending, so take the tail then flip.
+    override fun observeRecent(limit: Int): Flow<List<RunEventEntity>> =
+        eventsFlow.map { list -> list.takeLast(limit).reversed() }
+
     override suspend fun deleteByMission(missionId: String) {
         events.entries.removeAll { it.value.missionId == missionId }
         publish()

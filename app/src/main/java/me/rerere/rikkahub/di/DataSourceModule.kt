@@ -324,6 +324,84 @@ val dataSourceModule = module {
     single { get<AppDatabase>().runEventDao() }
     single { RunEventRepository(get()) }
     single { MissionEngine(repository = get(), runEventRepository = get(), subAgentRegistry = get(), appScope = get<AppScope>()) }
+    // 批 A — mission runtime launcher: turns a mission row into an execution run (create /
+    // continue rounds). assistantResolver: mission.assistantId when parseable and still
+    // present, else the currently selected assistant, else the first assistant. The settings
+    // snapshot is read once per launch so a mid-session assistant switch is picked up.
+    single {
+        val settingsStore = get<SettingsStore>()
+        me.rerere.rikkahub.service.mission.MissionLauncher(
+            missionRepository = get(),
+            runService = get(),
+            runEventRepository = get(),
+            assistantResolver = { rawId ->
+                val settings = settingsStore.settingsFlow.value
+                val parsed = rawId?.let { r -> runCatching { kotlin.uuid.Uuid.parse(r) }.getOrNull() }
+                parsed?.takeIf { id -> settings.assistants.any { it.id == id } }
+                    ?: settings.assistantId.takeIf { id -> settings.assistants.any { it.id == id } }
+                    ?: settings.assistants.firstOrNull()?.id
+            },
+        )
+    }
+    // 批 A — mission supervisor (兜底督导): subscribes to run-finished journal events and
+    // runs the boot orphan scan (started from RikkaHubApp). Probes bridge to the real
+    // repositories; notify bridges to NotificationUtil on a dedicated channel ("任务",
+    // "rikkahub_missions") so completion / parking pushes do not ride the cron channel.
+    single {
+        val agentRunRepository = get<AgentRunRepository>()
+        val conversationRepository = get<me.rerere.rikkahub.data.repository.ConversationRepository>()
+        val appContext = get<Context>()
+        me.rerere.rikkahub.service.mission.MissionSupervisor(
+            missionRepository = get(),
+            launcher = get(),
+            runEventRepository = get(),
+            runStatusProbe = me.rerere.rikkahub.service.mission.MissionSupervisor.RunStatusProbe { runId ->
+                runCatching { agentRunRepository.getById(runId)?.status }.getOrNull()
+            },
+            conversationProbe = object : me.rerere.rikkahub.service.mission.MissionSupervisor.MissionConversationProbe {
+                override suspend fun userSpokeLast(conversationId: String): Boolean {
+                    val conversation = runCatching {
+                        conversationRepository.getConversationById(kotlin.uuid.Uuid.parse(conversationId))
+                    }.getOrNull() ?: return false
+                    return conversation.currentMessages.lastOrNull()?.role == me.rerere.ai.core.MessageRole.USER
+                }
+
+                override suspend fun lastAssistantText(conversationId: String): String? = runCatching {
+                    conversationRepository.getConversationById(kotlin.uuid.Uuid.parse(conversationId))
+                        ?.currentMessages
+                        ?.lastOrNull { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
+                        ?.toText()
+                        ?.trim()
+                        ?.takeIf { it.isNotEmpty() }
+                }.getOrNull()
+            },
+            notify = { title, content ->
+                runCatching {
+                    val nm = appContext.getSystemService(android.app.NotificationManager::class.java)
+                    if (nm.getNotificationChannel("rikkahub_missions") == null) {
+                        nm.createNotificationChannel(
+                            android.app.NotificationChannel(
+                                "rikkahub_missions",
+                                "任务",
+                                android.app.NotificationManager.IMPORTANCE_DEFAULT,
+                            )
+                        )
+                    }
+                    me.rerere.rikkahub.utils.NotificationUtil.notify(
+                        context = appContext,
+                        channelId = "rikkahub_missions",
+                        notificationId = title.hashCode(),
+                    ) {
+                        this.title = title
+                        this.content = content
+                        useBigTextStyle = true
+                        autoCancel = true
+                    }
+                }
+            },
+            appScope = get<AppScope>(),
+        )
+    }
     // P3 — RunService: the surface-facing run contract. This ChatService-backed facade is
     // the P3 implementation; P4 swaps in a conversation-free runtime without call sites
     // noticing. Cron submits through this; Telegram follows when the streaming surface lands.
