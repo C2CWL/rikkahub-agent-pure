@@ -276,8 +276,15 @@ val appModule = module {
         SoundEffectPlayer(get())
     }
 
+    // P4 (runtime extraction) — GenerationLoop lives in :runtime and takes its log sink
+    // through the LoopLogSink interface, so Koin must be able to resolve that type too.
+    // Bind the interface to the one AILoggingManager instance: the loop asks for the
+    // interface, the developer page keeps asking for the concrete manager.
     single {
         AILoggingManager(get(), get())
+    }
+    single<me.rerere.rikkahub.runtime.LoopLogSink> {
+        get<me.rerere.rikkahub.data.ai.AILoggingManager>()
     }
 
     single {
