@@ -24,13 +24,20 @@ class RunOrchestratorTest {
         private val failAt: Set<Int> = emptySet(),
         private val delayMs: Long = 40,
     ) : RunService {
-        val submitted = mutableListOf<RunRequest>()
+        // Children submit from Dispatchers.IO lanes, so this list is touched concurrently:
+        // keep it synchronized and hand out snapshots (a plain ArrayList loses writes here).
+        private val submittedRequests: MutableList<RunRequest> =
+            java.util.Collections.synchronizedList(mutableListOf<RunRequest>())
+        val submitted: List<RunRequest> get() = submittedRequests.toList()
         val active = AtomicInteger(0)
         val peak = AtomicInteger(0)
 
         override suspend fun submit(request: RunRequest): RunHandle {
-            val index = submitted.size
-            submitted += request
+            // The child index must come from the request, not from `submitted.size`: two lanes
+            // can read the same size before either appends, which would hand two children the
+            // same id and make `failAt` miss (that is the flake this fake used to have).
+            val index = request.prompt.removePrefix("task ").toIntOrNull() ?: -1
+            submittedRequests += request
             return RunHandle(
                 id = "run-$index",
                 conversationId = Uuid.random(),
