@@ -43,22 +43,46 @@ fun subagentDispatchTool(
     definitions: List<AgentDefinition> = emptyList(),
 ): Tool {
     val enabledDefinitions = AgentDefinitionResolver.enabledDefinitions(definitions)
+    // The posture the engine will clamp this dispatch with, read at construction time — the same
+    // live value LocalTools consults to decide whether to register this tool at all. Its tone
+    // line is appended to the description below: until now `DescriptionTone` was computed on
+    // every caps() call and read by nobody, so all five postures shipped identical text.
+    val profile = SubAgentDispatchProfileRules.getLiveDispatchProfile()
     val description = buildString {
         append(
             """
-                Dispatch a focused sub-agent — a clean-context LLM run that returns a concise
-                summary. Use when the task is independent (research, lookup, multi-step work)
-                and would otherwise pollute your context with intermediate output, OR when the
-                user explicitly asks for parallel work.
+                Dispatch a focused sub-agent — a clean-context LLM run that returns a concise summary.
 
-                Pass a clear, self-contained task — the sub-agent doesn't see your conversation,
-                so restate any context it needs. Pass a short label so the user can recognise
-                the running sub-agent. For long-running work, set run_in_background=true: when a
-                background run finishes, its result is delivered to you automatically as a system
-                notification inside this conversation's next model request — it never appears in
-                the chat page, and an in-flight turn sees it on its very next step without
-                waiting for the turn to end. You can still poll with subagent_get. Foreground
-                (default) blocks until terminal.
+                WHEN TO DISPATCH — two reasons, and only two:
+                - the intermediate work would pollute your context (wide exploration, bulk lookup,
+                  multi-file audit), or
+                - the work splits into parts that are genuinely independent.
+                Do NOT dispatch a single small edit, or anything that needs your own judgement,
+                iteration, or back-and-forth. A dispatch costs an approval prompt and roughly 20k
+                tokens of overhead — for one step it is cheaper to do the work yourself.
+
+                WRITE THE TASK SO IT CAN SUCCEED — the sub-agent does NOT see your conversation:
+                - Restate every fact it needs, and INLINE the things it would otherwise go looking
+                  for: paths, API signatures, class names, templates, icon lists. Never tell it to
+                  "read file X for reference" — an exploring sub-agent burns its whole trip budget
+                  on reading (observed: 28 trips / 1.2M input tokens, zero output). For code work,
+                  keep a dispatch to at most 3 files.
+                - State the acceptance criteria and the exact output shape you want.
+                - It must END on a plain-text summary: the dispatcher harvests only its last text
+                  reply, so a run that stops on a tool call returns nothing.
+                - Pass a short label so the user can recognise the running sub-agent.
+
+                BUDGETS — size them to the task:
+                - timeout_seconds: default ${SubAgentDefaults.DEFAULT_TIMEOUT_SECONDS}s foreground,
+                  ${SubAgentDefaults.DEFAULT_BACKGROUND_TIMEOUT_SECONDS}s when run_in_background=true;
+                  max ${SubAgentDefaults.MAX_TIMEOUT_SECONDS}. Coding or multi-file work needs >= 600.
+                - max_trips: default ${SubAgentDefaults.DEFAULT_MAX_TRIPS}, max ${SubAgentDefaults.MAX_MAX_TRIPS}. A lookup needs
+                  2-3; a single file 8-12; a multi-file implementation or a full audit needs 20+.
+                - reasoning_level: omit to inherit. A lookup rarely needs more than low.
+                - run_in_background=true for anything likely to exceed a few minutes: the dispatch
+                  returns immediately and the finished run notifies you inside this conversation's
+                  next model request. Foreground (default) blocks this tool call until terminal.
+                - no_result=true for fire-and-forget work whose output you do not need.
 
                 Concurrency caps: each assistant has its own (default 3, configurable
                 ${SubAgentDefaults.MIN_PER_ASSISTANT_CAP}-${SubAgentDefaults.MAX_PER_ASSISTANT_CAP}) and there is a
@@ -77,6 +101,16 @@ fun subagentDispatchTool(
                 "newest user message's audio/video attachments are copied into the sub-agent's " +
                 "first message. Images are never carried."
         )
+        // Wires `DescriptionTone` to the text the model actually reads. The posture has to land
+        // in the description — clamping caps is invisible to the model, which is why the tone
+        // used to make no difference at all.
+        SubAgentDispatchProfileRules
+            .descriptionToneNote(SubAgentDispatchProfileRules.caps(profile).descriptionTone)
+            ?.let {
+                appendLine()
+                appendLine()
+                append(it)
+            }
         if (enabledDefinitions.isNotEmpty()) {
             appendLine()
             appendLine()
@@ -201,7 +235,18 @@ fun subagentDispatchTool(
                                 "notify, so silent work never fails in silence.",
                         )
                     })
-                    put("timeout_seconds", buildJsonObject { put("type", "integer") })
+                    put("timeout_seconds", buildJsonObject {
+                        put("type", "integer")
+                        put(
+                            "description",
+                            "Wall-clock cap for this run, in seconds. Default " +
+                                "${SubAgentDefaults.DEFAULT_TIMEOUT_SECONDS} for a foreground " +
+                                "dispatch and ${SubAgentDefaults.DEFAULT_BACKGROUND_TIMEOUT_SECONDS} when " +
+                                "run_in_background=true; max ${SubAgentDefaults.MAX_TIMEOUT_SECONDS}. A " +
+                                "coding or multi-file task needs >= 600: the 180s default is the " +
+                                "single most common reason a sub-agent dies with nothing to show.",
+                        )
+                    })
                     put("max_trips", buildJsonObject {
                         put("type", "integer")
                         put(
@@ -295,13 +340,16 @@ fun subagentDispatchTool(
             } else {
                 null
             }
+            // Resolved once: the background default timeout is keyed off it, and evaluating the
+            // same expression twice is how the two would eventually drift apart.
+            val runInBackground = params["run_in_background"]?.jsonPrimitive?.booleanOrNull ?: false
             val request = SubAgentRequest(
                 task = task,
                 modelId = params["model_id"]?.jsonPrimitive?.contentOrNull,
                 agentName = params["agent"]?.jsonPrimitive?.contentOrNull,
                 systemPrompt = params["system_prompt"]?.jsonPrimitive?.contentOrNull,
                 tools = requestedTools,
-                runInBackground = params["run_in_background"]?.jsonPrimitive?.booleanOrNull ?: false,
+                runInBackground = runInBackground,
                 noResult = params["no_result"]?.jsonPrimitive?.booleanOrNull ?: false,
                 // Normalised to lowercase here; the engine's validator rejects unknown values
                 // outright, so a typo can never silently fall back to the assistant default.
@@ -309,8 +357,10 @@ fun subagentDispatchTool(
                     ?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
                 // D3 — opt-in, mirroring the schema above; absent means "task text only".
                 attachParentMedia = params["attach_media"]?.jsonPrimitive?.booleanOrNull ?: false,
-                timeoutSeconds = params["timeout_seconds"]?.jsonPrimitive?.intOrNull
-                    ?: SubAgentDefaults.DEFAULT_TIMEOUT_SECONDS,
+                timeoutSeconds = SubAgentDefaults.resolveTimeoutSeconds(
+                    explicit = params["timeout_seconds"]?.jsonPrimitive?.intOrNull,
+                    runInBackground = runInBackground,
+                ),
                 maxTrips = params["max_trips"]?.jsonPrimitive?.intOrNull
                     ?: SubAgentDefaults.DEFAULT_MAX_TRIPS,
                 retryOnFailure = params["retry_on_failure"]?.jsonPrimitive?.intOrNull

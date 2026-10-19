@@ -66,6 +66,17 @@ object SubAgentDefaults {
      */
     const val DEFAULT_TIMEOUT_SECONDS = 180
     const val MAX_TIMEOUT_SECONDS = 1800
+    /**
+     * Default per-run wall-clock cap for a BACKGROUND dispatch (`run_in_background = true`)
+     * that omits `timeout_seconds`.
+     *
+     * The 180s foreground default exists so a blocking tool call does not look hung; a
+     * background run has no such problem, and reusing 180s there killed every coding run that
+     * relied on the default (observed repeatedly: three scene-writing runs at 180s, zero
+     * output, then all green once the timeout was raised). 900s is still short enough to
+     * surface a genuinely stuck run, and sits well under [MAX_TIMEOUT_SECONDS].
+     */
+    const val DEFAULT_BACKGROUND_TIMEOUT_SECONDS = 900
     const val DEFAULT_MAX_TRIPS = 12
     const val MAX_MAX_TRIPS = 30
     const val MAX_LABEL_LENGTH = 60
@@ -119,6 +130,14 @@ object SubAgentDefaults {
         - Do not ask the parent for clarification — make the best judgment call you can
           and proceed.
     """.trimIndent()
+
+    /**
+     * Resolve a dispatch's effective `timeout_seconds`: the explicit request when given,
+     * otherwise the foreground or background default (see
+     * [DEFAULT_BACKGROUND_TIMEOUT_SECONDS]). Pure — unit-tested on the JVM.
+     */
+    fun resolveTimeoutSeconds(explicit: Int?, runInBackground: Boolean): Int = explicit
+        ?: if (runInBackground) DEFAULT_BACKGROUND_TIMEOUT_SECONDS else DEFAULT_TIMEOUT_SECONDS
 }
 
 @Serializable

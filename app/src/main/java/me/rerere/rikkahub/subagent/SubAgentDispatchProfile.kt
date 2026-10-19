@@ -99,4 +99,28 @@ object SubAgentDispatchProfileRules {
     /** Clamp [timeoutSeconds] to the profile's ceiling. */
     fun clampTimeout(profile: SubAgentDispatchProfile, timeoutSeconds: Int): Int =
         minOf(timeoutSeconds, caps(profile).timeoutCeilingSec)
+
+    /**
+     * The one-line posture note appended to `subagent_dispatch`'s description, or null when
+     * there is nothing to say (NEVER — that profile does not even register the tool).
+     *
+     * This is what finally makes [DispatchCaps.descriptionTone] real. Until now the tone was
+     * computed on every [caps] call and read by nobody: the profile clamped the numbers
+     * (trips, timeout, concurrency) but the text the model actually reads stayed
+     * byte-identical across all five postures — so under ASSIST, whose entire point is
+     * "delegate less", the model still read a description written to encourage delegation.
+     *
+     * Keep the note SHORT and factual; the full discipline lives in the description body.
+     */
+    fun descriptionToneNote(tone: DescriptionTone): String? = when (tone) {
+        DescriptionTone.NEVER -> null
+        DescriptionTone.ASSIST ->
+            "Posture: ASSIST (delegate sparingly) — only when your own context cannot fit the work."
+        DescriptionTone.NORMAL ->
+            "Posture: NORMAL — delegate when it clearly pays off."
+        DescriptionTone.BURST ->
+            "Posture: BURST — parallel dispatch is encouraged for independent parts."
+        DescriptionTone.UNLEASHED ->
+            "Posture: UNLEASHED — delegate aggressively; prefer parallel for independent parts."
+    }
 }

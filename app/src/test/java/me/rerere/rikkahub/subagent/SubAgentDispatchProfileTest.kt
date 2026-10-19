@@ -2,6 +2,7 @@ package me.rerere.rikkahub.subagent
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -102,5 +103,37 @@ class SubAgentDispatchProfileTest {
         assertEquals(1800, SubAgentDispatchProfileRules.clampTimeout(SubAgentDispatchProfile.NORMAL, 9999))
         assertEquals(3600, SubAgentDispatchProfileRules.clampTimeout(SubAgentDispatchProfile.UNLEASHED, 9999))
         assertEquals(100, SubAgentDispatchProfileRules.clampTimeout(SubAgentDispatchProfile.NORMAL, 100))
+    }
+
+    @Test
+    fun `description tone note is null only for NEVER`() {
+        assertNull(SubAgentDispatchProfileRules.descriptionToneNote(DescriptionTone.NEVER))
+        DescriptionTone.entries
+            .filter { it != DescriptionTone.NEVER }
+            .forEach {
+                assertFalse(
+                    "$it should produce a posture note",
+                    SubAgentDispatchProfileRules.descriptionToneNote(it).isNullOrBlank(),
+                )
+            }
+    }
+
+    @Test
+    fun `description tone notes are distinct per posture`() {
+        val notes = DescriptionTone.entries.mapNotNull { SubAgentDispatchProfileRules.descriptionToneNote(it) }
+        assertEquals(notes.size, notes.toSet().size)
+    }
+
+    @Test
+    fun `every dispatch-enabled profile lands a posture note in the description`() {
+        SubAgentDispatchProfile.entries
+            .filter { SubAgentDispatchProfileRules.isDispatchEnabled(it) }
+            .forEach { profile ->
+                val tone = SubAgentDispatchProfileRules.caps(profile).descriptionTone
+                assertFalse(
+                    "$profile should produce a posture note",
+                    SubAgentDispatchProfileRules.descriptionToneNote(tone).isNullOrBlank(),
+                )
+            }
     }
 }
