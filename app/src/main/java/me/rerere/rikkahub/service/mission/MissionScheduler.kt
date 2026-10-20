@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.data.mission.MissionEntity
 import me.rerere.rikkahub.data.mission.MissionExecutionState
 import me.rerere.rikkahub.data.mission.MissionRepository
 import me.rerere.rikkahub.data.mission.isTriggerArmed
@@ -22,6 +23,7 @@ import me.rerere.rikkahub.data.mission.triggerSpec
 import me.rerere.rikkahub.data.runevent.RunEventRepository
 import me.rerere.rikkahub.data.runevent.RunEventType
 import me.rerere.rikkahub.workflow.model.TriggerSpec
+import me.rerere.rikkahub.workflow.trigger.TimeCronTriggerFamily
 import me.rerere.rikkahub.workflow.trigger.TriggerBinding
 import me.rerere.rikkahub.workflow.trigger.TriggerFireCallback
 
@@ -71,6 +73,12 @@ class MissionScheduler(
     @Volatile private var started = false
     private var observeJob: Job? = null
 
+    /** Last armed set handed to [MissionTriggerEngine.sync]; guards against redundant resyncs. */
+    private var lastBindings: List<TriggerBinding> = emptyList()
+
+    /** missionId → last `next_run_at` this process wrote (null = "no scheduled next run"). */
+    private val writtenNextRunAt = HashMap<String, Long?>()
+
     /** Start observing missions and reconcile the trigger families. Idempotent. */
     @OptIn(FlowPreview::class)
     fun start() {
@@ -79,19 +87,17 @@ class MissionScheduler(
         MissionTriggerDispatcher.bind(this)
         observeJob = appScope.launch(Dispatchers.IO) {
             missionRepository.observeAll()
-                .map { missions ->
-                    missions.filter { it.isTriggerArmed }.mapNotNull { mission ->
-                        mission.triggerSpec?.let { spec ->
-                            // The stamp is 0: the time family already diffs the spec itself,
-                            // and mission.updatedAt changes on every execution-state write —
-                            // using it would reschedule the WorkManager job after every run.
-                            TriggerBinding(mission.id, spec, 0L)
-                        }
-                    }
-                }
-                .distinctUntilChanged()
                 .debounce(RESYNC_DEBOUNCE_MS)
-                .onEach { bindings -> runCatching { engine.sync(bindings) } }
+                .onEach { missions ->
+                    val bindings = missionBindings(missions)
+                    // Writing next_run_at re-emits this same flow; only resync the families
+                    // when the armed set actually changed.
+                    if (bindings != lastBindings) {
+                        lastBindings = bindings
+                        runCatching { engine.sync(bindings) }
+                    }
+                    runCatching { refreshNextRunAt(missions) }
+                }
                 .catch { Log.w(TAG, "mission scheduler observation failed", it) }
                 .collect { /* drained via onEach */ }
         }
@@ -143,6 +149,53 @@ class MissionScheduler(
     // ---------------------------------------------------------------------------------
     // helpers
     // ---------------------------------------------------------------------------------
+
+    /**
+     * The armed set to hand the trigger families. The stamp is 0: the time family already
+     * diffs the spec itself, and mission.updatedAt changes on every execution-state write —
+     * using it would reschedule the WorkManager job after every run.
+     */
+    private fun missionBindings(missions: List<MissionEntity>): List<TriggerBinding> =
+        missions.filter { it.isTriggerArmed }.mapNotNull { mission ->
+            mission.triggerSpec?.let { spec -> TriggerBinding(mission.id, spec, 0L) }
+        }
+
+    /**
+     * Keep `missions.next_run_at` honest for the detail page's trigger card.
+     *
+     * Only time/cron missions have a predictable "next": event-driven triggers (Wi-Fi,
+     * charging, geofence …) have none, so their column is cleared. Writes are deduped by
+     * [writtenNextRunAt] because the update itself re-emits [MissionRepository.observeAll];
+     * without the guard every write would trigger another write. A task that is paused
+     * (`triggerEnabled = false`) or no longer ACTIVE is cleared as well — the card must not
+     * claim a next run that will never happen.
+     */
+    private suspend fun refreshNextRunAt(missions: List<MissionEntity>) {
+        val nowMs = System.currentTimeMillis()
+        val liveIds = HashSet<String>(missions.size)
+        for (mission in missions) {
+            liveIds.add(mission.id)
+            val next = runCatching { nextRunAtFor(mission, nowMs) }.getOrNull()
+            val unchanged = writtenNextRunAt.containsKey(mission.id) &&
+                writtenNextRunAt[mission.id] == next &&
+                mission.nextRunAt == next
+            if (unchanged) continue
+            writtenNextRunAt[mission.id] = next
+            runCatching { missionRepository.updateNextRunAt(mission.id, next) }
+        }
+        writtenNextRunAt.keys.retainAll(liveIds)
+    }
+
+    /** The next scheduled fire in epoch ms, or null for missions without a clock. */
+    private fun nextRunAtFor(mission: MissionEntity, nowMs: Long): Long? {
+        if (!mission.isTriggerArmed) return null
+        val spec = mission.triggerSpec ?: return null
+        return when (spec) {
+            is TriggerSpec.TimeCron ->
+                TimeCronTriggerFamily.computeNextFireMs(spec, zoneId(), nowMs)
+            else -> null
+        }
+    }
 
     private suspend fun loadBinding(missionId: String): TriggerBinding? = runCatching {
         val mission = missionRepository.getById(missionId) ?: return@runCatching null

@@ -5,7 +5,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.rikkahub.data.agentrun.AgentRunKind
@@ -15,6 +17,7 @@ import me.rerere.rikkahub.data.mission.MissionRepository
 import me.rerere.rikkahub.data.mission.MissionStatus
 import me.rerere.rikkahub.data.mission.executionStateEnum
 import me.rerere.rikkahub.data.mission.isLive
+import me.rerere.rikkahub.data.mission.acceptanceCriteria
 import me.rerere.rikkahub.data.mission.isRecurring
 import me.rerere.rikkahub.data.mission.limits
 import me.rerere.rikkahub.data.mission.statusEnum
@@ -76,8 +79,10 @@ private const val RUN_STATUS_PROCESS_LOST: String = "process_lost"
  *   dedup set covers replays within a single process, not across restarts.
  * - Notification copy is hardcoded Chinese for batch A — i18n TODO (move to
  *   strings.xml once the notification texts settle).
- * - Token circuit breaker: [ContinueInput.totalTokens] is passed as 0 — per-mission
- *   usage aggregation (usage_records) is not wired yet. TODO after it lands.
+ * - Token circuit breaker input comes from [tokenProbe], which the DI wires to the usage
+ *   ledger (sum of `input_tokens + output_tokens` for the mission's execution
+ *   conversation). A probe failure reads as 0 tokens — a metering hiccup must never park
+ *   a mission that is otherwise making progress.
  */
 class MissionSupervisor(
     private val missionRepository: MissionRepository,
@@ -98,6 +103,12 @@ class MissionSupervisor(
     /** 通知出口（DI 接 NotificationUtil；JVM 测试用记录器）。 */
     private val notify: (title: String, content: String) -> Unit,
     private val appScope: CoroutineScope,
+    /**
+     * conversationId → tokens spent under it (DI 接 UsageRecordDao.tokensForConversation).
+     * Default 0 keeps every pre-existing construction site (and its tests) compiling while
+     * turning the breaker off — exactly the batch-A behaviour.
+     */
+    private val tokenProbe: suspend (conversationId: String) -> Long = { 0L },
 ) {
 
     /** run id → ledger status name; null when the run is unknown to the ledger. */
@@ -288,6 +299,13 @@ class MissionSupervisor(
                 ?.let { conversationProbe.userSpokeLast(it) }
                 ?: false
 
+            // Token breaker input: everything billed under the mission's execution
+            // conversation. A null conversation or a failed probe reads as 0 — metering
+            // must never be the reason a healthy mission is parked.
+            val totalTokens = mission.conversationId
+                ?.let { cid -> runCatching { tokenProbe(cid) }.getOrDefault(0L) }
+                ?: 0L
+
             // 批 A — the user pressed "stop" on this mission: the detail page journals a NOTE
             // titled `user_stop`, and the round ends as a normal COMPLETED run, so without
             // this check the supervisor would "continue" what the user just halted. Treat it
@@ -308,9 +326,9 @@ class MissionSupervisor(
                 stallRounds = stallRounds,
                 maxResumeRounds = mission.limits.maxResumeRounds,
                 stallThreshold = mission.limits.stallRounds,
-                // TODO(批 A 之后): aggregate usage_records for this mission — the token
-                // breaker has its input slot but is not wired yet.
-                totalTokens = 0L,
+                // Token breaker: cumulative usage of the execution conversation. Wired
+                // through the usage ledger (see tokenProbe); 0 when unavailable.
+                totalTokens = totalTokens,
                 tokenBudget = mission.limits.tokenBudget,
                 userIntervened = userIntervened,
             )
@@ -327,6 +345,10 @@ class MissionSupervisor(
     /** Done signal: mission → DONE, notify the delivery summary (payload `note`, or a generic line). */
     private suspend fun complete(mission: MissionEntity, events: List<RunEventEntity>) {
         val summary = doneNote(events) ?: "目标已达成"
+
+        // 批 B.5 — the model declared done: record its self-assessment against the goal
+        // list. Reported indices are honoured; omitted / empty means "every goal met".
+        recordGoalSelfAssessment(mission, events)
 
         // 批 B — a trigger-driven mission recurs. A done signal ends THIS occurrence, not the
         // mission: park it back to IDLE (resume budget reset) and keep it ACTIVE so the next
@@ -348,6 +370,46 @@ class MissionSupervisor(
         missionRepository.updateExecutionState(mission.id, MissionExecutionState.IDLE)
         notify("任务完成：${mission.title}", summary)
     }
+
+    /**
+     * 批 B.5 — persist the model's goal self-assessment when a round reports done.
+     *
+     * The `mission_report` call may carry `goals: [0-based indices]`; absent (or empty)
+     * means the model claims every goal. Indices outside the list are dropped, so a
+     * hallucinated index cannot corrupt the artifact library's ratio. Missions without a
+     * goal list are skipped entirely. Best-effort: a write failure never blocks completion.
+     */
+    private suspend fun recordGoalSelfAssessment(
+        mission: MissionEntity,
+        events: List<RunEventEntity>,
+    ) {
+        runCatching {
+            val criteria = mission.acceptanceCriteria
+            if (criteria.isEmpty()) return@runCatching
+            val reported = doneGoals(events)
+            val checked = if (reported.isNullOrEmpty()) {
+                criteria.indices.toList()
+            } else {
+                reported.filter { it in criteria.indices }.distinct().sorted()
+            }
+            missionRepository.setAcceptanceChecked(mission.id, checked)
+        }
+    }
+
+    /** The `goals` array of the done payload, or null when the model did not send one. */
+    private fun doneGoals(events: List<RunEventEntity>): List<Int>? =
+        events.firstOrNull {
+            it.type == RunEventType.NOTE.name && it.title == SIGNAL_DONE_TITLE
+        }
+            ?.payloadJson
+            ?.let { raw ->
+                runCatching {
+                    val array = JsonInstant.parseToJsonElement(raw)
+                        .jsonObject["goals"] as? JsonArray
+                        ?: return@runCatching null
+                    array.mapNotNull { it.jsonPrimitive.intOrNull }
+                }.getOrNull()
+            }
 
     /** Blocked signal / circuit breaker: mission → BLOCKED, notify the reason. */
     private suspend fun block(mission: MissionEntity, reason: String) {

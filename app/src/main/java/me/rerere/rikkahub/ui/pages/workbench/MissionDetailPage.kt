@@ -53,6 +53,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,12 +76,14 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.mission.Artifact
 import me.rerere.rikkahub.data.mission.MissionEntity
 import me.rerere.rikkahub.data.mission.MissionExecutionState
+import me.rerere.rikkahub.data.mission.MissionLimits
 import me.rerere.rikkahub.data.mission.MissionStatus
 import me.rerere.rikkahub.data.runevent.RunEventEntity
 import me.rerere.rikkahub.data.runevent.RunEventType
 import me.rerere.rikkahub.data.mission.acceptanceChecked
 import me.rerere.rikkahub.data.mission.acceptanceCriteria
 import me.rerere.rikkahub.data.mission.executionStateEnum
+import me.rerere.rikkahub.data.mission.limits
 import me.rerere.rikkahub.data.mission.statusEnum
 import me.rerere.rikkahub.data.mission.triggerSpec
 import me.rerere.rikkahub.workflow.model.TriggerSpec
@@ -108,6 +112,7 @@ fun MissionDetailPage(missionId: String) {
     var menuExpanded by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showNoteDialog by remember { mutableStateOf(false) }
+    var showLimitsDialog by remember { mutableStateOf(false) }
 
     // Batch A — surface launch failures (validation refusals from MissionLauncher) as toasts.
     val launchError by vm.launchError.collectAsStateWithLifecycle()
@@ -152,6 +157,14 @@ fun MissionDetailPage(missionId: String) {
                                 onClick = {
                                     menuExpanded = false
                                     showDeleteDialog = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(text = stringResource(R.string.mission_menu_limits)) },
+                                leadingIcon = { Icon(HugeIcons.Wrench01, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    showLimitsDialog = true
                                 },
                             )
                         }
@@ -513,6 +526,19 @@ fun MissionDetailPage(missionId: String) {
         }
     }
 
+    if (showLimitsDialog) {
+        mission?.let { m ->
+            LimitsDialog(
+                limits = m.limits,
+                onDismiss = { showLimitsDialog = false },
+                onSave = { updated ->
+                    vm.updateLimits(updated)
+                    showLimitsDialog = false
+                },
+            )
+        }
+    }
+
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
@@ -599,6 +625,95 @@ fun MissionDetailPage(missionId: String) {
             },
         )
     }
+}
+
+// ---------------------------------------------------------------------------
+// 批 B.5 — runtime limits editor
+// ---------------------------------------------------------------------------
+
+/**
+ * Edit the circuit-breaker limits of an existing mission (detail page menu → "Run limits").
+ *
+ * Before this, limits could only be set in the create sheet, so a mission that kept parking
+ * itself had to be deleted and recreated to be tuned. Fields are numeric-only text; the save
+ * button stays disabled until all three parse. Empty input is not treated as "use default" —
+ * the user edits concrete numbers, and the defaults are simply what the dialog opens with.
+ */
+@Composable
+private fun LimitsDialog(
+    limits: MissionLimits,
+    onDismiss: () -> Unit,
+    onSave: (MissionLimits) -> Unit,
+) {
+    var resume by remember(limits) { mutableStateOf(limits.maxResumeRounds.toString()) }
+    var stall by remember(limits) { mutableStateOf(limits.stallRounds.toString()) }
+    var tokens by remember(limits) { mutableStateOf(limits.tokenBudget.toString()) }
+
+    val resumeValue = resume.toIntOrNull()?.takeIf { it >= 0 }
+    val stallValue = stall.toIntOrNull()?.takeIf { it >= 0 }
+    val tokensValue = tokens.toLongOrNull()?.takeIf { it >= 0 }
+    val valid = resumeValue != null && stallValue != null && tokensValue != null
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.mission_limits_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(R.string.mission_limits_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = resume,
+                    onValueChange = { resume = it.filter(Char::isDigit).take(3) },
+                    label = { Text(text = stringResource(R.string.mission_limits_resume)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = stall,
+                    onValueChange = { stall = it.filter(Char::isDigit).take(3) },
+                    label = { Text(text = stringResource(R.string.mission_limits_stall)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = tokens,
+                    onValueChange = { tokens = it.filter(Char::isDigit).take(9) },
+                    label = { Text(text = stringResource(R.string.mission_limits_tokens)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (valid) {
+                        onSave(
+                            MissionLimits(
+                                maxResumeRounds = resumeValue!!,
+                                stallRounds = stallValue!!,
+                                tokenBudget = tokensValue!!,
+                            )
+                        )
+                    }
+                },
+                enabled = valid,
+            ) {
+                Text(text = stringResource(R.string.mission_limits_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.cancel))
+            }
+        },
+    )
 }
 
 // ---------------------------------------------------------------------------

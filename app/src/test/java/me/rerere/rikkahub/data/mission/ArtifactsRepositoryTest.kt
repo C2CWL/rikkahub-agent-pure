@@ -53,6 +53,10 @@ class ArtifactsRepositoryTest {
 
         override suspend fun tokensSince(sinceMs: Long) = 0L
 
+        override suspend fun tokensForConversation(conversationId: String) =
+            rows.filter { it.conversationId == conversationId }
+                .sumOf { it.inputTokens.toLong() + it.outputTokens }
+
         override suspend fun deleteOlderThan(cutoffMs: Long) = 0
     }
 

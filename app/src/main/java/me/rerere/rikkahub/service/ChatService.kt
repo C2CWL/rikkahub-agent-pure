@@ -1672,7 +1672,7 @@ class ChatService(
         val missionIdForReport = missionIdForSignalTool(conversationId)
         if (missionIdForReport != null) {
             add(
-                buildMissionReportTool { status, note ->
+                buildMissionReportTool { status, note, goals ->
                     runCatching {
                         missionEngine.reportSignal(
                             conversationId = conversationId.toString(),
@@ -1680,6 +1680,7 @@ class ChatService(
                             status = status,
                             note = note,
                             missionId = missionIdForReport,
+                            goals = goals,
                         )
                     }
                     when (status) {
@@ -2122,7 +2123,7 @@ class ChatService(
         val missionIdForReport = missionIdForSignalTool(conversationId)
         if (missionIdForReport != null) {
             add(
-                buildMissionReportTool { status, note ->
+                buildMissionReportTool { status, note, goals ->
                     runCatching {
                         missionEngine.reportSignal(
                             conversationId = conversationId.toString(),
@@ -2130,6 +2131,7 @@ class ChatService(
                             status = status,
                             note = note,
                             missionId = missionIdForReport,
+                            goals = goals,
                         )
                     }
                     when (status) {

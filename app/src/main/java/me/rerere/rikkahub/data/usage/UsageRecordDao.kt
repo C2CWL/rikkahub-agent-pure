@@ -35,6 +35,20 @@ interface UsageRecordDao {
     suspend fun tokensSince(sinceMs: Long): Long
 
     /**
+     * Tokens billed under one conversation — the mission token breaker's input.
+     *
+     * A mission owns exactly one execution conversation, so summing by conversation id is
+     * the per-mission total without adding a mission column (and without a migration).
+     * [inputTokens] + [outputTokens] is used instead of `total_tokens` because some
+     * providers fill only the two halves; the sum is what the ledger itself bills on.
+     */
+    @Query(
+        "SELECT COALESCE(SUM(input_tokens), 0) + COALESCE(SUM(output_tokens), 0) " +
+            "FROM usage_records WHERE conversation_id = :conversationId"
+    )
+    suspend fun tokensForConversation(conversationId: String): Long
+
+    /**
      * P2-12b — every row for one conversation, oldest first, for the turn view. Bounded by
      * [UsageLedgerDefaults.QUERY_LIMIT] so a long conversation cannot load an unbounded list.
      */

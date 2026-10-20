@@ -2923,6 +2923,13 @@ HARDLINE 保护仍然生效：rm -rf /、mkfs、shutdown / reboot、向块设备
   <string name="mission_default_title">任务</string>
   <string name="mission_menu_archive">归档</string>
   <string name="mission_menu_delete">删除</string>
+  <string name="mission_menu_limits">兜底参数</string>
+  <string name="mission_limits_title">兜底参数</string>
+  <string name="mission_limits_desc">无人值守时的熔断保护：连续无进展或累计 token 超预算，任务会停下并通知你。</string>
+  <string name="mission_limits_resume">自动续跑轮数</string>
+  <string name="mission_limits_stall">无进展轮数</string>
+  <string name="mission_limits_tokens">Token 预算</string>
+  <string name="mission_limits_save">保存</string>
   <string name="mission_delete_title">删除任务？</string>
   <string name="mission_delete_message">该任务及其时间线将被永久删除。</string>
   <string name="mission_delete_confirm">删除</string>

@@ -11,6 +11,7 @@ import me.rerere.rikkahub.data.mission.Artifact
 import me.rerere.rikkahub.data.mission.ArtifactsRepository
 import me.rerere.rikkahub.data.mission.MissionEntity
 import me.rerere.rikkahub.data.mission.MissionExecutionState
+import me.rerere.rikkahub.data.mission.MissionLimits
 import me.rerere.rikkahub.data.mission.MissionRepository
 import me.rerere.rikkahub.data.mission.MissionSettlement
 import me.rerere.rikkahub.data.mission.MissionStatus
@@ -94,6 +95,17 @@ class MissionDetailVM(
     fun setTriggerEnabled(id: String, enabled: Boolean) {
         viewModelScope.launch {
             missionRepository.setTriggerEnabled(id, enabled)
+        }
+    }
+
+    /**
+     * 批 B.5 — edit the circuit-breaker limits after creation. Previously they could only
+     * be set in the create sheet; a mission that keeps parking itself needs to be tuned
+     * from the detail page without being recreated.
+     */
+    fun updateLimits(limits: MissionLimits) {
+        viewModelScope.launch {
+            missionRepository.updateLimits(missionId, limits)
         }
     }
 

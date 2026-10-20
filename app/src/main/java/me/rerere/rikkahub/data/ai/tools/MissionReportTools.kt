@@ -1,10 +1,12 @@
 package me.rerere.rikkahub.data.ai.tools
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -39,7 +41,7 @@ private val MISSION_REPORT_STATUSES: Set<String> = setOf("done", "blocked", "pro
  *   the model sees (built by the assembly site).
  */
 fun buildMissionReportTool(
-    report: suspend (status: String, note: String?) -> String,
+    report: suspend (status: String, note: String?, goals: List<Int>) -> String,
 ): Tool = Tool(
     name = "mission_report",
     description = buildString {
@@ -86,6 +88,21 @@ fun buildMissionReportTool(
                         )
                     },
                 )
+                put(
+                    "goals",
+                    buildJsonObject {
+                        put("type", "array")
+                        put(
+                            "description",
+                            "仅 done 时使用：本次真正达成的目标序号（从 0 开始，对应任务目标清单）。" +
+                                "省略或留空表示全部目标达成。",
+                        )
+                        put(
+                            "items",
+                            buildJsonObject { put("type", "integer") },
+                        )
+                    },
+                )
             },
             required = listOf("status"),
         )
@@ -107,7 +124,12 @@ fun buildMissionReportTool(
             )
         } else {
             val note = params["note"]?.jsonPrimitive?.contentOrNull
-            listOf(UIMessagePart.Text(report(status, note)))
+            val goals = params["goals"]
+                ?.takeIf { it is JsonArray }
+                ?.let { it as JsonArray }
+                ?.mapNotNull { it.jsonPrimitive.intOrNull }
+                ?: emptyList()
+            listOf(UIMessagePart.Text(report(status, note, goals)))
         }
     },
 )

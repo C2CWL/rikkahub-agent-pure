@@ -3208,6 +3208,13 @@ HARDLINE protections still apply: rm -rf /, mkfs, shutdown / reboot, dd to block
   <string name="mission_default_title">Mission</string>
   <string name="mission_menu_archive">Archive</string>
   <string name="mission_menu_delete">Delete</string>
+  <string name="mission_menu_limits">Runtime limits</string>
+  <string name="mission_limits_title">Runtime limits</string>
+  <string name="mission_limits_desc">Circuit breakers for unattended runs: a mission that keeps making no progress, or burns through its token budget, is stopped and you are notified.</string>
+  <string name="mission_limits_resume">Auto-continue rounds</string>
+  <string name="mission_limits_stall">No-progress rounds</string>
+  <string name="mission_limits_tokens">Token budget</string>
+  <string name="mission_limits_save">Save</string>
   <string name="mission_delete_title">Delete mission?</string>
   <string name="mission_delete_message">This mission and its timeline will be permanently deleted.</string>
   <string name="mission_delete_confirm">Delete</string>

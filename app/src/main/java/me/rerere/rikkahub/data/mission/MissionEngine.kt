@@ -5,6 +5,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -259,6 +262,7 @@ class MissionEngine(
         status: String,
         note: String?,
         missionId: String? = null,
+        goals: List<Int> = emptyList(),
     ) {
         runCatching {
             val missionId = missionId ?: missionIdFor(conversationId) ?: return@runCatching
@@ -273,6 +277,14 @@ class MissionEngine(
                     buildJsonObject {
                         put("mission_signal", status)
                         note?.takeIf { it.isNotBlank() }?.let { put("note", it) }
+                        // 批 B.5 — self-assessment: which goals the model says it met.
+                        // Absent means "all of them" (see MissionSupervisor.complete).
+                        if (goals.isNotEmpty()) {
+                            put(
+                                "goals",
+                                buildJsonArray { goals.sorted().forEach { add(JsonPrimitive(it)) } },
+                            )
+                        }
                     }
                 ),
                 missionId = missionId,

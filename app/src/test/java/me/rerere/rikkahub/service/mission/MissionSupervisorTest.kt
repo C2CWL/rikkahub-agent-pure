@@ -9,6 +9,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.ui.UIMessagePart
@@ -18,6 +19,7 @@ import me.rerere.rikkahub.data.ai.tools.buildMissionReportTool
 import me.rerere.rikkahub.data.mission.FakeMissionDao
 import me.rerere.rikkahub.data.mission.MissionEntity
 import me.rerere.rikkahub.data.mission.MissionExecutionState
+import me.rerere.rikkahub.data.mission.MissionLimits
 import me.rerere.rikkahub.data.mission.MissionRepository
 import me.rerere.rikkahub.data.mission.MissionStatus
 import me.rerere.rikkahub.data.runevent.FakeRunEventDao
@@ -28,6 +30,7 @@ import me.rerere.rikkahub.service.run.RunHandle
 import me.rerere.rikkahub.service.run.RunRequest
 import me.rerere.rikkahub.service.run.RunResult
 import me.rerere.rikkahub.service.run.RunService
+import me.rerere.rikkahub.runtime.util.JsonInstant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -100,6 +103,7 @@ class MissionSupervisorTest {
         val conversations = FakeConversationProbe()
         val runStatuses = mutableMapOf<String, String?>()
         val runKinds = mutableMapOf<String, String?>()
+        val tokens = mutableMapOf<String, Long>()
         val notifications = mutableListOf<Pair<String, String>>()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -117,6 +121,7 @@ class MissionSupervisorTest {
             conversationProbe = conversations,
             notify = { title, content -> notifications += title to content },
             appScope = scope,
+            tokenProbe = { conversationId -> tokens[conversationId] ?: 0L },
         )
 
         suspend fun seed(mission: MissionEntity) = missionDao.upsert(mission)
@@ -150,12 +155,16 @@ class MissionSupervisorTest {
         resumeCount: Int = 0,
         executionState: String = MissionExecutionState.RUNNING.name,
         lastRunId: String? = null,
+        acceptanceJson: String = "[]",
+        limitsJson: String? = null,
     ) = MissionEntity(
         id = id,
         title = "写周报",
         description = "总结本周进展",
         status = status,
+        acceptanceJson = acceptanceJson,
         conversationId = conversationId,
+        limitsJson = limitsJson,
         resumeCount = resumeCount,
         executionState = executionState,
         lastRunId = lastRunId,
@@ -291,6 +300,85 @@ class MissionSupervisorTest {
         assertEquals(MissionStatus.BLOCKED.name, fx.missionDao.getById("m5")!!.status)
         assertEquals("熔断:无进展", fx.notifications.last().second)
         fx.cleanupLaunches()
+    }
+
+    @Test
+    fun `token budget overrun blocks the round instead of resuming`() = runBlocking {
+        val fx = Fixture()
+        fx.seed(
+            mission(
+                id = "m12",
+                conversationId = CONV1,
+                limitsJson = JsonInstant.encodeToString(MissionLimits(tokenBudget = 1_000L)),
+            )
+        )
+        // Usage ledger says this mission's execution conversation already burnt 5k tokens.
+        fx.tokens[CONV1] = 5_000L
+        fx.runEvents.emit(
+            type = RunEventType.TOOL_RESULT,
+            title = "tool",
+            missionId = "m12",
+            runId = "r12",
+        )
+        fx.supervisor.handleRunFinished(fx.finishedEvent(runId = "r12", missionId = "m12"))
+
+        assertTrue("the token breaker must not submit", fx.runService.submitted.isEmpty())
+        assertEquals(MissionStatus.BLOCKED.name, fx.missionDao.getById("m12")!!.status)
+        assertEquals("熔断:预算", fx.notifications.single().second)
+    }
+
+    @Test
+    fun `done records the model goal self-assessment`() = runBlocking {
+        val fx = Fixture()
+        fx.seed(
+            mission(
+                id = "m13",
+                conversationId = CONV1,
+                acceptanceJson = JsonInstant.encodeToString(listOf("完成大纲", "写入文件")),
+            )
+        )
+        fx.runEvents.emit(
+            type = RunEventType.NOTE,
+            title = "mission_report: done",
+            payloadJson = """{"mission_signal":"done","note":"只完成了第二步","goals":[1]}""",
+            missionId = "m13",
+            conversationId = CONV1,
+            runId = "r13",
+        )
+        fx.supervisor.handleRunFinished(fx.finishedEvent(runId = "r13", missionId = "m13"))
+
+        assertEquals(
+            "only the reported goal index is checked",
+            "[1]",
+            fx.missionDao.getById("m13")!!.acceptanceCheckedJson,
+        )
+    }
+
+    @Test
+    fun `done without goals marks every goal met`() = runBlocking {
+        val fx = Fixture()
+        fx.seed(
+            mission(
+                id = "m14",
+                conversationId = CONV1,
+                acceptanceJson = JsonInstant.encodeToString(listOf("完成大纲", "写入文件")),
+            )
+        )
+        fx.runEvents.emit(
+            type = RunEventType.NOTE,
+            title = "mission_report: done",
+            payloadJson = """{"mission_signal":"done","note":"全部完成"}""",
+            missionId = "m14",
+            conversationId = CONV1,
+            runId = "r14",
+        )
+        fx.supervisor.handleRunFinished(fx.finishedEvent(runId = "r14", missionId = "m14"))
+
+        assertEquals(
+            "an omitted goals array means the model claims every goal",
+            "[0,1]",
+            fx.missionDao.getById("m14")!!.acceptanceCheckedJson,
+        )
     }
 
     @Test
@@ -586,9 +674,9 @@ class MissionSupervisorTest {
 
     @Test
     fun `mission_report tool forwards valid calls and rejects unknown statuses`() = runBlocking {
-        val calls = mutableListOf<Pair<String, String?>>()
-        val tool = buildMissionReportTool { status, note ->
-            calls += status to note
+        val calls = mutableListOf<Triple<String, String?, List<Int>>>()
+        val tool = buildMissionReportTool { status, note, goals ->
+            calls += Triple(status, note, goals)
             """{"ok":true,"status":"$status"}"""
         }
 
@@ -600,18 +688,36 @@ class MissionSupervisorTest {
         })
         val okText = (okParts.single() as UIMessagePart.Text).text
         assertTrue("the reporter's return string is passed through", okText.contains("\"ok\":true"))
-        assertEquals(listOf<Pair<String, String?>>("done" to "交付摘要"), calls)
+        assertEquals(
+            listOf(Triple("done", "交付摘要", emptyList<Int>())),
+            calls,
+        )
+
+        val withGoals = tool.execute(buildJsonObject {
+            put("status", "done")
+            put("note", "部分完成")
+            put("goals", kotlinx.serialization.json.buildJsonArray {
+                add(kotlinx.serialization.json.JsonPrimitive(0))
+                add(kotlinx.serialization.json.JsonPrimitive(2))
+            })
+        })
+        assertTrue((withGoals.single() as UIMessagePart.Text).text.contains("\"ok\":true"))
+        assertEquals(
+            "goal indices reach the reporter",
+            Triple("done", "部分完成", listOf(0, 2)),
+            calls.last(),
+        )
 
         val badParts = tool.execute(buildJsonObject { put("status", "finished") })
         assertTrue(
             (badParts.single() as UIMessagePart.Text).text.contains("invalid_status"),
         )
-        assertEquals("invalid calls never reach the reporter", 1, calls.size)
+        assertEquals("invalid calls never reach the reporter", 2, calls.size)
 
         val missingParts = tool.execute(buildJsonObject { })
         assertTrue(
             (missingParts.single() as UIMessagePart.Text).text.contains("invalid_status"),
         )
-        assertEquals("missing status never reaches the reporter", 1, calls.size)
+        assertEquals("missing status never reaches the reporter", 2, calls.size)
     }
 }

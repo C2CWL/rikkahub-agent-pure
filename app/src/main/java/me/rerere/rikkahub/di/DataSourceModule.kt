@@ -351,6 +351,7 @@ val dataSourceModule = module {
     single {
         val agentRunRepository = get<AgentRunRepository>()
         val conversationRepository = get<me.rerere.rikkahub.data.repository.ConversationRepository>()
+        val usageRecordDao = get<me.rerere.rikkahub.data.usage.UsageRecordDao>()
         val appContext = get<Context>()
         me.rerere.rikkahub.service.mission.MissionSupervisor(
             missionRepository = get(),
@@ -404,6 +405,9 @@ val dataSourceModule = module {
                 }
             },
             appScope = get<AppScope>(),
+            // Token breaker: everything billed under the mission's execution conversation.
+            // The probe is a suspend lambda, so it runs on the supervisor's coroutine.
+            tokenProbe = { conversationId -> usageRecordDao.tokensForConversation(conversationId) },
         )
     }
     // 批 B — mission scheduler (开始方式：定时 / 触发). Owns the single instance of the
