@@ -8,10 +8,13 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import me.rerere.rikkahub.data.agentrun.AgentRunKind
 import me.rerere.rikkahub.data.mission.MissionEntity
 import me.rerere.rikkahub.data.mission.MissionExecutionState
 import me.rerere.rikkahub.data.mission.MissionRepository
 import me.rerere.rikkahub.data.mission.MissionStatus
+import me.rerere.rikkahub.data.mission.executionStateEnum
+import me.rerere.rikkahub.data.mission.isLive
 import me.rerere.rikkahub.data.mission.isRecurring
 import me.rerere.rikkahub.data.mission.limits
 import me.rerere.rikkahub.data.mission.statusEnum
@@ -82,6 +85,14 @@ class MissionSupervisor(
     private val runEventRepository: RunEventRepository,
     /** runId → 台账状态名（DI 接 AgentRunRepository.getById(id)?.status 的 name）；null=未知。 */
     private val runStatusProbe: RunStatusProbe,
+    /**
+     * runId → 台账 kind（DI 接 AgentRunRepository.getById(id)?.kind）；null=未知。
+     *
+     * `mission_dispatch` 的子 run 会带着父任务的 missionId 记账，但它们不是任务轮次：
+     * 子代理结束不能触发任务续跑，子代理被取消也不能把父任务停成 IDLE。未知 kind 保守放行
+     * （老数据/探针失败时保持批 A 行为）。
+     */
+    private val runKindProbe: suspend (runId: String) -> String? = { null },
     /** 会话级探针（DI 接 ConversationRepository）。 */
     private val conversationProbe: MissionConversationProbe,
     /** 通知出口（DI 接 NotificationUtil；JVM 测试用记录器）。 */
@@ -159,10 +170,21 @@ class MissionSupervisor(
         runCatching {
             val missionId = event.missionId ?: return
             val runId = event.runId ?: return
+            if (!isMissionRound(runId)) return
             if (!processedRuns.add(runId)) return
 
             val mission = missionRepository.getById(missionId) ?: return
-            if (mission.statusEnum != MissionStatus.ACTIVE) return
+            if (mission.statusEnum != MissionStatus.ACTIVE) {
+                // The user completed / archived the mission while this round was still in
+                // flight. Its end is not a continuation trigger; park the posture so a
+                // stale RUNNING cannot strand the runtime (or a later boot).
+                parkIfRunning(mission)
+                return
+            }
+            // The mission's posture is the runtime's own answer to "is this round live?".
+            // A user stop / a terminal transition parks it IDLE while the generation is
+            // still winding down; the round's end must not restart what they just ended.
+            if (!mission.executionStateEnum.isLive) return
 
             val status = runStatusProbe.statusOf(runId)
             if (status == RUN_STATUS_CANCELLED) {
@@ -172,6 +194,19 @@ class MissionSupervisor(
             }
 
             evaluateAndAct(mission, runId)
+        }
+    }
+
+    /** True when [runId] is a mission execution round (unknown kinds stay eligible). */
+    private suspend fun isMissionRound(runId: String): Boolean {
+        val kind = runCatching { runKindProbe(runId) }.getOrNull() ?: return true
+        return kind == AgentRunKind.Mission.wire
+    }
+
+    /** Park a mission whose execution posture still claims a live round. */
+    private suspend fun parkIfRunning(mission: MissionEntity) {
+        if (mission.executionStateEnum.isLive) {
+            missionRepository.updateExecutionState(mission.id, MissionExecutionState.IDLE)
         }
     }
 
@@ -197,8 +232,9 @@ class MissionSupervisor(
 
     private suspend fun scanOnBoot(mission: MissionEntity) {
         if (mission.status != MissionStatus.ACTIVE.name) return
-        if (mission.executionState != MissionExecutionState.RUNNING.name) return
+        if (mission.executionStateEnum != MissionExecutionState.RUNNING) return
         val runId = mission.lastRunId ?: return
+        if (!isMissionRound(runId)) return
 
         when (runStatusProbe.statusOf(runId)) {
             null,

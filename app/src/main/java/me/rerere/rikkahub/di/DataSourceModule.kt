@@ -309,6 +309,7 @@ val dataSourceModule = module {
             conversationRepository = get(),
             runService = get(),
             runEventRepository = get(),
+            missionRepository = get(),
         )
     }
 
@@ -357,6 +358,9 @@ val dataSourceModule = module {
             runEventRepository = get(),
             runStatusProbe = me.rerere.rikkahub.service.mission.MissionSupervisor.RunStatusProbe { runId ->
                 runCatching { agentRunRepository.getById(runId)?.status }.getOrNull()
+            },
+            runKindProbe = { runId ->
+                runCatching { agentRunRepository.getById(runId)?.kind }.getOrNull()
             },
             conversationProbe = object : me.rerere.rikkahub.service.mission.MissionSupervisor.MissionConversationProbe {
                 override suspend fun userSpokeLast(conversationId: String): Boolean {

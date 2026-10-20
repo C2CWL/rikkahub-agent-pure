@@ -99,6 +99,7 @@ class MissionSupervisorTest {
         val runService = FakeRunService()
         val conversations = FakeConversationProbe()
         val runStatuses = mutableMapOf<String, String?>()
+        val runKinds = mutableMapOf<String, String?>()
         val notifications = mutableListOf<Pair<String, String>>()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -112,6 +113,7 @@ class MissionSupervisorTest {
             ),
             runEventRepository = runEvents,
             runStatusProbe = MissionSupervisor.RunStatusProbe { runId -> runStatuses[runId] },
+            runKindProbe = { runId -> runKinds[runId] },
             conversationProbe = conversations,
             notify = { title, content -> notifications += title to content },
             appScope = scope,
@@ -146,7 +148,7 @@ class MissionSupervisorTest {
         conversationId: String? = null,
         status: String = MissionStatus.ACTIVE.name,
         resumeCount: Int = 0,
-        executionState: String = MissionExecutionState.IDLE.name,
+        executionState: String = MissionExecutionState.RUNNING.name,
         lastRunId: String? = null,
     ) = MissionEntity(
         id = id,
@@ -361,6 +363,74 @@ class MissionSupervisorTest {
         assertEquals(MissionStatus.ACTIVE.name, fx.missionDao.getById("m7b")!!.status)
         assertEquals(MissionExecutionState.IDLE.name, fx.missionDao.getById("m7b")!!.executionState)
         assertTrue(fx.notifications.isEmpty())
+    }
+
+    @Test
+    fun `a mission_dispatch child run never drives the mission`() = runBlocking {
+        val fx = Fixture()
+        fx.seed(mission(id = "m8", conversationId = CONV1, lastRunId = "r8"))
+        // The child carries the parent missionId for journaling, but it is a SubAgent run.
+        fx.runKinds["r8-child"] = AgentRunKind.SubAgent.wire
+        fx.runEvents.emit(
+            type = RunEventType.TOOL_RESULT,
+            title = "tool",
+            missionId = "m8",
+            runId = "r8-child",
+        )
+        val finished = fx.finishedEvent(runId = "r8-child", missionId = "m8")
+
+        fx.supervisor.handleRunFinished(finished)
+
+        assertTrue("a child finishing must not start a mission round", fx.runService.submitted.isEmpty())
+        assertEquals(MissionExecutionState.RUNNING.name, fx.missionDao.getById("m8")!!.executionState)
+        assertTrue(fx.notifications.isEmpty())
+    }
+
+    @Test
+    fun `a round ending after the user parked the mission is not continued`() = runBlocking {
+        val fx = Fixture()
+        // The stop button parks the posture IDLE before the generation finishes winding down.
+        fx.seed(
+            mission(
+                id = "m8b",
+                conversationId = CONV1,
+                executionState = MissionExecutionState.IDLE.name,
+                lastRunId = "r8b",
+            )
+        )
+        fx.runEvents.emit(
+            type = RunEventType.TOOL_RESULT,
+            title = "tool",
+            missionId = "m8b",
+            runId = "r8b",
+        )
+        val finished = fx.finishedEvent(runId = "r8b", missionId = "m8b")
+
+        fx.supervisor.handleRunFinished(finished)
+
+        assertTrue(fx.runService.submitted.isEmpty())
+        assertEquals(MissionExecutionState.IDLE.name, fx.missionDao.getById("m8b")!!.executionState)
+    }
+
+    @Test
+    fun `a round ending after the mission was completed only parks the posture`() = runBlocking {
+        val fx = Fixture()
+        fx.seed(
+            mission(
+                id = "m8c",
+                conversationId = CONV1,
+                status = MissionStatus.DONE.name,
+                executionState = MissionExecutionState.RUNNING.name,
+                lastRunId = "r8c",
+            )
+        )
+        val finished = fx.finishedEvent(runId = "r8c", missionId = "m8c")
+
+        fx.supervisor.handleRunFinished(finished)
+
+        assertTrue(fx.runService.submitted.isEmpty())
+        assertEquals(MissionStatus.DONE.name, fx.missionDao.getById("m8c")!!.status)
+        assertEquals(MissionExecutionState.IDLE.name, fx.missionDao.getById("m8c")!!.executionState)
     }
 
     // ---------------------------------------------------------------- boot

@@ -52,10 +52,59 @@ class RunResumePolicyTest {
     }
 
     @Test
-    fun `mission rounds resume automatically on the first interruption`() {
+    fun `mission rounds resume automatically while the mission still owns them`() {
         assertEquals(
             RunResumeDecision.AUTO_RESUME,
-            RunResumePolicy.decide(kind = "mission", checkpoint = checkpoint(), conversationExists = true),
+            RunResumePolicy.decide(
+                kind = "mission",
+                checkpoint = checkpoint(),
+                conversationExists = true,
+                runId = "run-1",
+                mission = MissionClaim(
+                    status = "ACTIVE",
+                    executionState = "RUNNING",
+                    lastRunId = "run-1",
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `a mission that no longer owns the run is never resumed`() {
+        val owned = MissionClaim(status = "ACTIVE", executionState = "RUNNING", lastRunId = "run-1")
+        val cases = mapOf(
+            "mission done" to owned.copy(status = "DONE"),
+            "mission archived" to owned.copy(status = "ARCHIVED"),
+            "mission parked idle (user stop)" to owned.copy(executionState = "IDLE"),
+            "a newer round took over" to owned.copy(lastRunId = "run-2"),
+            "mission gone" to null,
+        )
+        for ((label, claim) in cases) {
+            assertEquals(
+                label,
+                RunResumeDecision.NOT_RESUMABLE,
+                RunResumePolicy.decide(
+                    kind = "mission",
+                    checkpoint = checkpoint(),
+                    conversationExists = true,
+                    runId = "run-1",
+                    mission = claim,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `cron runs do not consult a mission claim`() {
+        assertEquals(
+            RunResumeDecision.AUTO_RESUME,
+            RunResumePolicy.decide(
+                kind = "cron",
+                checkpoint = checkpoint(),
+                conversationExists = true,
+                runId = "run-1",
+                mission = null,
+            ),
         )
     }
 
@@ -69,6 +118,12 @@ class RunResumePolicyTest {
                     kind = kind,
                     checkpoint = checkpoint(attempts = RunCheckpointDefaults.MAX_AUTO_RESUME_ATTEMPTS),
                     conversationExists = true,
+                    runId = "run-1",
+                    mission = if (kind == "mission") {
+                        MissionClaim(status = "ACTIVE", executionState = "RUNNING", lastRunId = "run-1")
+                    } else {
+                        null
+                    },
                 ),
             )
         }

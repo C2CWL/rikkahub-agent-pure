@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.agentrun
 
 import android.util.Log
+import me.rerere.rikkahub.data.mission.MissionRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.runevent.RunEventRepository
 import me.rerere.rikkahub.data.runevent.RunEventType
@@ -28,6 +29,8 @@ class RunResumeCoordinator(
     private val conversationRepository: ConversationRepository,
     private val runService: RunService,
     private val runEventRepository: RunEventRepository,
+    /** Mission ownership lookup — boot recovery must not resurrect a finished mission. */
+    private val missionRepository: MissionRepository,
 ) {
 
     /**
@@ -49,6 +52,8 @@ class RunResumeCoordinator(
             kind = run.kind,
             checkpoint = checkpoint,
             conversationExists = conversationExists,
+            runId = run.id,
+            mission = missionClaimFor(kind = run.kind, missionId = checkpoint.missionId),
         )
 
         return when (decision) {
@@ -79,6 +84,24 @@ class RunResumeCoordinator(
 
             RunResumeDecision.NOT_RESUMABLE -> false
         }
+    }
+
+    /**
+     * The mission's claim on a stranded run, or null when the run is not a mission round /
+     * the mission row is gone. Only mission runs are gated: cron runs have no mission.
+     */
+    private suspend fun missionClaimFor(kind: String, missionId: String?): MissionClaim? {
+        if (kind != AgentRunKind.Mission.wire) return null
+        val id = missionId ?: return null
+        return runCatching {
+            missionRepository.getById(id)?.let { mission ->
+                MissionClaim(
+                    status = mission.status,
+                    executionState = mission.executionState,
+                    lastRunId = mission.lastRunId,
+                )
+            }
+        }.getOrNull()
     }
 
     private suspend fun journal(run: AgentRun, conversationId: Uuid, title: String, detail: String) {

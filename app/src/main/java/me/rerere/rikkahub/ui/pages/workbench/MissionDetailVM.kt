@@ -15,6 +15,8 @@ import me.rerere.rikkahub.data.mission.MissionRepository
 import me.rerere.rikkahub.data.mission.MissionSettlement
 import me.rerere.rikkahub.data.mission.MissionStatus
 import me.rerere.rikkahub.data.mission.acceptanceChecked
+import me.rerere.rikkahub.data.mission.executionStateEnum
+import me.rerere.rikkahub.data.mission.isLive
 import me.rerere.rikkahub.data.runevent.RunEventEntity
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
@@ -65,6 +67,25 @@ class MissionDetailVM(
 
     fun transition(to: MissionStatus) {
         viewModelScope.launch {
+            val m = runCatching { missionRepository.getById(missionId) }.getOrNull()
+            // A transition out of ACTIVE ends the mission, not just its label. Stop the round
+            // that may still be generating and park the runtime, so a later restart cannot
+            // resume it as an unfinished mission.
+            if (m != null && to != MissionStatus.ACTIVE && m.executionStateEnum.isLive) {
+                missionRepository.logEvent(
+                    missionId = missionId,
+                    type = RunEventType.NOTE,
+                    title = "user_stop",
+                    detail = "mission -> $to",
+                    runId = m.lastRunId,
+                )
+                // Park the posture before cancelling: the generation's terminal callback may
+                // fire inside stopGeneration, and the supervisor must already see IDLE.
+                missionRepository.updateExecutionState(missionId, MissionExecutionState.IDLE)
+                m.conversationId
+                    ?.let { raw -> runCatching { Uuid.parse(raw) }.getOrNull() }
+                    ?.let { conv -> runCatching { chatService.stopGeneration(conv) } }
+            }
             missionRepository.transition(missionId, to)
         }
     }
@@ -110,9 +131,19 @@ class MissionDetailVM(
             val m = mission.value ?: return@launch
             val convId = m.conversationId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
                 ?: return@launch
-            runCatching { chatService.stopGeneration(convId) }
-            missionRepository.logEvent(missionId, type = RunEventType.NOTE, title = "user_stop")
+            // Journal the stop BEFORE cancelling the generation: the round then ends as a
+            // normal COMPLETED run, and the supervisor must be able to see this NOTE on the
+            // run's own journal (hence the runId) or it will happily "continue" the stop.
+            missionRepository.logEvent(
+                missionId = missionId,
+                type = RunEventType.NOTE,
+                title = "user_stop",
+                runId = m.lastRunId,
+            )
+            // Park the posture before cancelling: the generation's terminal callback may fire
+            // inside stopGeneration, and the supervisor must already see IDLE.
             missionRepository.updateExecutionState(missionId, MissionExecutionState.IDLE)
+            runCatching { chatService.stopGeneration(convId) }
         }
     }
 

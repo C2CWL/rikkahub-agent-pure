@@ -197,6 +197,14 @@ val MissionEntity.executionStateEnum: MissionExecutionState
     get() = MissionExecutionState.entries.firstOrNull { it.name == executionState }
         ?: MissionExecutionState.IDLE
 
+/**
+ * True while the posture says a round is live (running, or parked on a tool approval).
+ * IDLE / BLOCKED mean the runtime has no round to continue — the supervisor must not
+ * restart one just because a generation was still winding down.
+ */
+val MissionExecutionState.isLive: Boolean
+    get() = this == MissionExecutionState.RUNNING || this == MissionExecutionState.WAITING_APPROVAL
+
 // ---------------------------------------------------------------------------
 // 批 B — start-mode (trigger) helpers
 // ---------------------------------------------------------------------------
