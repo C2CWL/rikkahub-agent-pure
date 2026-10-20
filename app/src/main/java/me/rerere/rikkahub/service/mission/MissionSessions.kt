@@ -8,8 +8,11 @@ import java.util.concurrent.ConcurrentHashMap
  * Why it exists: a mission's execution conversation is the coordinate tools and the
  * supervisor work with — incoming tool calls and yield checks need to answer "is this
  * conversation part of a mission, and which one?" without a DB round trip.
- * [MissionLauncher] registers every launched round; the round's tool assembly / the
- * supervisor read it back via [missionIdFor] / [conversationIdFor].
+ * Registration must happen BEFORE generation is dispatched: [MissionLauncher] binds a
+ * known execution conversation, and `ChatServiceRunService.submit` binds the id of a
+ * freshly created one (a mission's first round) before calling `sendMessage` — the round's
+ * tool assembly reads it back synchronously and attaches `mission_report` only on a hit.
+ * The supervisor reads [missionIdFor] / [conversationIdFor] the same way.
  *
  * Consistency: [register] keeps both directions in sync — re-pointing either side first
  * drops the stale pointer on the other side, so `byConversation[c] == m ⟺

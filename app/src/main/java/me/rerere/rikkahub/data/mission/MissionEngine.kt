@@ -247,15 +247,24 @@ class MissionEngine(
      *
      * Best-effort like every other method here — reporting a signal must never break the
      * generation loop, and a conversation with no bound mission is a silent no-op.
+     *
+     * @param missionId the mission the caller resolved while assembling the tool. Passing it
+     *   makes the write independent of the DB backfill having caught up (the first round can
+     *   report before `missions.conversation_id` is written) and of the process-scoped cache
+     *   being warm (a boot-resumed round starts with an empty cache).
      */
     suspend fun reportSignal(
         conversationId: String,
         runId: String?,
         status: String,
         note: String?,
+        missionId: String? = null,
     ) {
         runCatching {
-            val missionId = missionIdFor(conversationId) ?: return@runCatching
+            val missionId = missionId ?: missionIdFor(conversationId) ?: return@runCatching
+            // Keep the cache in sync with the resolved coordinate so later timeline writes in
+            // the same round find the mission without another DB read.
+            bindings[conversationId] = missionId
             runEventRepository.emit(
                 type = RunEventType.NOTE,
                 title = "mission_report: $status",

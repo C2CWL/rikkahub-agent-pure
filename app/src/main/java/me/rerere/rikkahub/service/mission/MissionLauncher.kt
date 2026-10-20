@@ -105,10 +105,6 @@ class MissionLauncher(
                         error = "Mission $missionId has no usable execution conversation; continue refused",
                     )
             }
-            // Create with no usable conversation → submit creates a fresh one, and the
-            // handle's id is backfilled onto the mission after it returns.
-            val isNewConversation = conversationUuid == null
-
             val directive = MissionContinueComposer.composeDirective(
                 mission.title,
                 mission.description,
@@ -139,10 +135,13 @@ class MissionLauncher(
                 else -> true
             }
 
-            // Arm the mission directive before submit when the conversation is known, so the
-            // generation that submit kicks off is guaranteed to see it.
+            // Arm the mission directive and bind the mission↔conversation mapping before submit
+            // when the conversation is known, so the generation that submit kicks off is
+            // guaranteed to see both. For a fresh conversation the id only exists inside
+            // RunService.submit; that path registers the binding itself before dispatching.
             conversationUuid?.let { conv ->
                 runCatching { ConversationSystemAddendum.set(conv, directive) }
+                runCatching { MissionSessions.register(conv.toString(), missionId) }
             }
 
             val handle = runService.submit(
@@ -162,7 +161,11 @@ class MissionLauncher(
             // A fresh conversation only materialises inside submit; arm its directive too
             // (idempotent for the reused-conversation case).
             runCatching { ConversationSystemAddendum.set(handle.conversationId, directive) }
-            if (isNewConversation) {
+            // Backfill whenever submit did not hand back the conversation we asked for: a
+            // mission with no conversation yet, or a stale id that no longer resolves (submit
+            // then creates a fresh conversation). Without the second case the mission keeps
+            // pointing at the dead conversation, so every later round reports into nothing.
+            if (handle.conversationId != conversationUuid) {
                 runCatching {
                     missionRepository.updateConversation(missionId, handle.conversationId.toString())
                 }

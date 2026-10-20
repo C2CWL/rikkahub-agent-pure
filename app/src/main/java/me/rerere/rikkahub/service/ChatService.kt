@@ -1581,6 +1581,30 @@ class ChatService(
     }
 
     /**
+     * The mission a turn is executing for, or null for an ordinary chat. This is the gate for
+     * `mission_report`: attaching it to a non-mission turn would let the model report progress
+     * into an unrelated mission.
+     *
+     * The in-memory registry is authoritative and is written before a mission round is
+     * dispatched (RunService.submit / resume, launcher). The repository fallback exists for a
+     * round resumed from a checkpoint that never stamped its mission id; it is queried only
+     * while a Mission run drives this conversation, so a normal chat costs no extra read.
+     */
+    private suspend fun missionIdForSignalTool(conversationId: Uuid): String? = runCatching {
+        val registered = me.rerere.rikkahub.service.mission.MissionSessions
+            .missionIdFor(conversationId.toString())
+        if (registered != null) return@runCatching registered
+        val drivenByMission = me.rerere.rikkahub.service.run.ConversationRunRegistry
+            .kindFor(conversationId) == me.rerere.rikkahub.data.agentrun.AgentRunKind.Mission.wire
+        if (!drivenByMission) return@runCatching null
+        val resolved = missionEngine.missionIdFor(conversationId.toString())
+        if (resolved == null) {
+            Log.w(TAG, "mission run on $conversationId has no mission binding; mission_report will be absent")
+        }
+        resolved
+    }.getOrNull()
+
+    /**
      * Builds the tool list available to [assistant] in [conversationId]/[conversation] for
      * [rerunTool], outside the generation loop. Mirrors the components handleMessageComplete's
      * inline tool assembly uses (local tools, workspace tools, skill tools, namespaced MCP
@@ -1639,12 +1663,14 @@ class ChatService(
                 definitions = localTools.expertDefinitionsBlocking(),
             )
         )
-        // 批 A — mission_report: the task-mode signal tool. Registered only inside a mission
-        // execution session (MissionSessions knows the conversation); inert everywhere else,
-        // mirroring mission_dispatch's registration shape so the regenerate path sees the
-        // same surface the first pass had. The report lambda persists the signal as a NOTE
-        // event the MissionSupervisor consumes.
-        if (runCatching { me.rerere.rikkahub.service.mission.MissionSessions.missionIdFor(conversationId.toString()) }.getOrNull() != null) {
+        // 批 A — mission_report: the task-mode signal tool. Attached only inside a mission
+        // execution session; inert everywhere else, mirroring mission_dispatch's registration
+        // shape so the regenerate path sees the same surface the first pass had. The report
+        // lambda persists the signal as a NOTE event the MissionSupervisor consumes.
+        // Resolved once per turn; null on an ordinary chat, which is what keeps the signal
+        // tool off the surface there.
+        val missionIdForReport = missionIdForSignalTool(conversationId)
+        if (missionIdForReport != null) {
             add(
                 buildMissionReportTool { status, note ->
                     runCatching {
@@ -1653,6 +1679,7 @@ class ChatService(
                             runId = me.rerere.rikkahub.service.run.ConversationRunRegistry.runIdFor(conversationId),
                             status = status,
                             note = note,
+                            missionId = missionIdForReport,
                         )
                     }
                     when (status) {
@@ -1873,9 +1900,13 @@ class ChatService(
             // call — hence a `var` rather than a value.
             var liveCatalogueTools: (suspend () -> List<Tool>)? = null
             // P5 — the mission coordinate is resolved once per turn; the checkpoint lambda
-            // below runs on every step and must stay a pure write.
+            // below runs on every step and must stay a pure write. The in-memory registry is
+            // checked first because a mission's first round can start before the mission row's
+            // conversation_id is backfilled — a missing coordinate here would leave the
+            // checkpoint unable to restore the mission binding after a process death.
             val checkpointMissionId = runCatching {
-                missionEngine.missionIdFor(conversationId.toString())
+                me.rerere.rikkahub.service.mission.MissionSessions.missionIdFor(conversationId.toString())
+                    ?: missionEngine.missionIdFor(conversationId.toString())
             }.getOrNull()
             generationLoop.generateText(
                 settings = settings.toLoopSettings(),
@@ -2086,7 +2117,10 @@ class ChatService(
         )
         // 批 A — mission_report, mirroring the regenerate path above so both build paths
         // expose the same surface. Inert outside mission execution sessions.
-        if (runCatching { me.rerere.rikkahub.service.mission.MissionSessions.missionIdFor(conversationId.toString()) }.getOrNull() != null) {
+        // Resolved once per turn; null on an ordinary chat, which is what keeps the signal
+        // tool off the surface there.
+        val missionIdForReport = missionIdForSignalTool(conversationId)
+        if (missionIdForReport != null) {
             add(
                 buildMissionReportTool { status, note ->
                     runCatching {
@@ -2095,6 +2129,7 @@ class ChatService(
                             runId = me.rerere.rikkahub.service.run.ConversationRunRegistry.runIdFor(conversationId),
                             status = status,
                             note = note,
+                            missionId = missionIdForReport,
                         )
                     }
                     when (status) {

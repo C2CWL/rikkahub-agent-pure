@@ -7,6 +7,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.data.agentrun.AgentRunKind
 import me.rerere.rikkahub.data.agentrun.AgentRunRepository
 import me.rerere.rikkahub.data.agentrun.AgentRunStatus
 import me.rerere.rikkahub.data.agentrun.RunCheckpointRepository
@@ -20,6 +21,7 @@ import me.rerere.rikkahub.data.runevent.RunEventType
 import me.rerere.rikkahub.runtime.util.JsonInstant
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.awaitGenerationTerminal
+import me.rerere.rikkahub.service.mission.MissionSessions
 import kotlin.uuid.Uuid
 
 private const val TAG = "ChatServiceRunService"
@@ -121,6 +123,21 @@ class ChatServiceRunService(
             timeoutMs = request.timeoutMs,
             missionId = request.missionId,
         )
+
+        // 批 A — bind the mission to the conversation BEFORE generation is dispatched.
+        // ChatService's tool assembly reads this registry synchronously to decide whether the
+        // round gets `mission_report`; registering after `submit` returned (as the launcher used
+        // to) raced the first model request, so a round could start with no way to report
+        // done/blocked — and a mission that can't report never ends itself.
+        //
+        // Only a Mission *round* owns the signal tool: `mission_dispatch` children carry the
+        // parent missionId for journaling, but they are SubAgent runs and must not be able to
+        // declare the parent mission done.
+        if (request.kind == AgentRunKind.Mission) {
+            request.missionId?.let { missionId ->
+                runCatching { MissionSessions.register(conv.id.toString(), missionId) }
+            }
+        }
 
         runCatching {
             runEventRepository.emit(
@@ -262,6 +279,16 @@ class ChatServiceRunService(
         chatService.initializeConversation(conversationId)
         runCatching { HeadlessConversations.mark(conversationId) }
         ConversationRunRegistry.bind(conversationId, runId, checkpoint.kind)
+        // 批 A — a boot-resumed mission round bypasses MissionLauncher entirely (P5 recovery
+        // calls this method directly), so the mission↔conversation binding has to be restored
+        // here too. Without it the resumed round has no `mission_report` tool and can only end
+        // by timing out. Children of a mission carry the same missionId but are SubAgent runs;
+        // they do not own the signal tool.
+        if (checkpoint.kind == AgentRunKind.Mission.wire) {
+            checkpoint.missionId?.let { missionId ->
+                runCatching { MissionSessions.register(conversationId.toString(), missionId) }
+            }
+        }
 
         runCatching {
             runEventRepository.emit(

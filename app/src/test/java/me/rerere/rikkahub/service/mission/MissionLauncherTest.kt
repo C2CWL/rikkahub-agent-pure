@@ -20,6 +20,7 @@ import me.rerere.rikkahub.service.run.RunResult
 import me.rerere.rikkahub.service.run.RunService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -50,7 +51,17 @@ class MissionLauncherTest {
         val submitted = mutableListOf<RunRequest>()
         val handles = mutableListOf<RunHandle>()
 
+        /**
+         * What the mission↔conversation registry held for the requested conversation at the
+         * instant generation was dispatched. Proves the launcher registers BEFORE submit: a
+         * model request can start as soon as submit dispatches, so a mapping written after
+         * submit returns would race the first tool assembly.
+         */
+        var missionAtSubmit: String? = null
+
         override suspend fun submit(request: RunRequest): RunHandle {
+            missionAtSubmit = request.conversationId
+                ?.let { MissionSessions.missionIdFor(it.toString()) }
             submitted += request
             val handle = RunHandle(
                 id = "run-${submitted.size}",
@@ -165,10 +176,8 @@ class MissionLauncherTest {
     }
 
     @Test
-    fun `Create with an existing conversation reuses it and never backfills`() = runBlocking {
-        // freshHandleConversation = true: the handle deliberately carries a DIFFERENT id —
-        // if the launcher backfilled it here, the seeded conversation id would be overwritten.
-        val fx = Fixture(freshHandleConversation = true)
+    fun `Create with an existing conversation reuses it and keeps the mission binding`() = runBlocking {
+        val fx = Fixture()
         val conv = "22222222-2222-2222-2222-222222222222"
         fx.seed(mission(id = "m-reuse", conversationId = conv))
 
@@ -177,10 +186,15 @@ class MissionLauncherTest {
 
         val request = fx.runService.submitted.single()
         assertEquals("the existing conversation is requested for reuse", Uuid.parse(conv), request.conversationId)
+        assertEquals(
+            "the mission is registered before submit dispatches generation",
+            "m-reuse",
+            fx.runService.missionAtSubmit,
+        )
 
         val handle = fx.runService.handles.single()
         val row = fx.missionDao.getById("m-reuse")!!
-        assertEquals("reused conversations are not re-written onto the mission", conv, row.conversationId)
+        assertEquals("a reused conversation is not re-written onto the mission", conv, row.conversationId)
         assertNotNull(
             "directive is armed for the reused conversation before submit",
             ConversationSystemAddendum.get(Uuid.parse(conv)),
@@ -189,6 +203,35 @@ class MissionLauncherTest {
 
         MissionSessions.unregister(handle.conversationId.toString())
         ConversationSystemAddendum.clear(Uuid.parse(conv))
+        ConversationSystemAddendum.clear(handle.conversationId)
+    }
+
+    @Test
+    fun `a submit that falls back to a fresh conversation rebinds the mission to it`() = runBlocking {
+        // The seeded id no longer resolves in production, so submit creates a fresh
+        // conversation. The mission must follow the handle, otherwise every later round
+        // reports into a conversation that no longer exists.
+        val fx = Fixture(freshHandleConversation = true)
+        val stale = "22222222-2222-2222-2222-222222222222"
+        fx.seed(mission(id = "m-rebind", conversationId = stale))
+
+        val outcome = fx.launcher.launch("m-rebind", LaunchSource.Create)
+        assertTrue(outcome.ok)
+
+        val handle = fx.runService.handles.single()
+        assertNotEquals(stale, handle.conversationId.toString())
+        assertEquals(
+            "the mission follows the conversation submit actually used",
+            handle.conversationId.toString(),
+            fx.missionDao.getById("m-rebind")!!.conversationId,
+        )
+        assertEquals("m-rebind", MissionSessions.missionIdFor(handle.conversationId.toString()))
+        assertNull(
+            "the stale conversation is no longer bound to the mission",
+            MissionSessions.missionIdFor(stale),
+        )
+
+        MissionSessions.unregister(handle.conversationId.toString())
         ConversationSystemAddendum.clear(handle.conversationId)
     }
 
@@ -230,6 +273,11 @@ class MissionLauncherTest {
         val request = fx.runService.submitted.single()
         assertEquals(Uuid.parse(conv), request.conversationId)
         assertEquals("the continue prompt is used verbatim", "继续第 2 轮：先跑测试再收尾。", request.prompt)
+        assertEquals(
+            "a continuation is registered before submit dispatches generation",
+            "m-cont",
+            fx.runService.missionAtSubmit,
+        )
 
         val note = fx.launchNotes("m-cont").single()
         assertEquals("continue round 2", note.detail)
