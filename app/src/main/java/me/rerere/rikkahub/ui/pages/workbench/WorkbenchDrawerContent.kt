@@ -260,6 +260,7 @@ fun WorkbenchDrawerContent(
             onDismiss = { showSheet = false },
             defaultConversationId = currentConversationId,
             onCreate = { draft -> vm.createMission(draft) },
+            loadWorkflows = { id -> vm.listWorkflowDocs(id) },
         )
     }
 }

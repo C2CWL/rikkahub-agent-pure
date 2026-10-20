@@ -27,6 +27,7 @@ import java.util.Calendar
 class WorkbenchVM(
     private val missionRepository: MissionRepository,
     private val missionLauncher: MissionLauncher,
+    private val workspaceRepository: me.rerere.rikkahub.data.repository.WorkspaceRepository,
     subAgentRegistry: SubAgentRegistry,
 ) : ViewModel() {
 
@@ -79,6 +80,22 @@ class WorkbenchVM(
         launchError.value = null
     }
 
+    /**
+     * 批 C — `workflows/ 下的 .md` of a workspace, for the create sheet's playbook picker.
+     * Best-effort: an unreadable workspace yields an empty list (the sheet then shows
+     * 「由模型自选」 only).
+     */
+    suspend fun listWorkflowDocs(workspaceId: String): List<String> = runCatching {
+        workspaceRepository.listFiles(
+            id = workspaceId,
+            area = me.rerere.workspace.WorkspaceStorageArea.FILES,
+            path = me.rerere.rikkahub.service.mission.WORKFLOW_DIR,
+        )
+            .filter { !it.isDirectory && it.name.endsWith(".md", ignoreCase = true) }
+            .map { it.name }
+            .sorted()
+    }.getOrDefault(emptyList())
+
     fun createMission(draft: MissionDraft) {
         viewModelScope.launch {
             // 批 B — trigger start mode: serialize the spec; null = the immediate wish-style path.
@@ -93,6 +110,7 @@ class WorkbenchVM(
                 triggerJson = triggerJson,
                 cooldownSeconds = if (triggerJson != null) draft.cooldownSeconds else 0,
                 maxRunsPerDay = if (triggerJson != null) draft.maxRunsPerDay else null,
+                workflowPath = draft.workflowPath,
             )
             missionRepository.updateWorkspaceAndAssistant(mission.id, draft.workspaceId, draft.assistantId)
             draft.approvalMode?.let { missionRepository.updateApprovalMode(mission.id, it) }

@@ -144,6 +144,18 @@ data class MissionEntity(
     /** Next expected fire for time-based triggers (display only; WorkManager owns the real one). */
     @ColumnInfo("next_run_at")
     val nextRunAt: Long? = null,
+    // -------------------------------------------------------------------------------------
+    // 批 C（工作流程，v37）— the .md playbook the mission follows
+    // -------------------------------------------------------------------------------------
+    /**
+     * Path of a workflow document inside the mission's workspace, relative to the FILES
+     * area root (e.g. `workflows/weekly-report.md`). `null` means "let the model choose":
+     * the launch prompt lists the workspace's `workflows/ 下的 .md` files and the model picks
+     * one (or works without one). The path is stored, never the content — editing the .md
+     * changes the next round without touching the mission row.
+     */
+    @ColumnInfo("workflow_path")
+    val workflowPath: String? = null,
 )
 
 // ---------------------------------------------------------------------------

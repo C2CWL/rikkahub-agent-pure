@@ -38,6 +38,7 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
+import me.rerere.rikkahub.service.mission.MissionWorkflowDocs
 import me.rerere.rikkahub.ui.components.ai.WorkspaceSelectSheet
 import me.rerere.rikkahub.ui.components.ui.AssistantAvatar
 import me.rerere.rikkahub.workflow.model.TriggerSpec
@@ -95,6 +96,8 @@ data class MissionDraft(
     val trigger: TriggerSpec? = null,
     val cooldownSeconds: Int = 60,
     val maxRunsPerDay: Int? = 24,
+    /** 批 C — workspace-relative .md path (`workflows/x.md`); null = let the model choose. */
+    val workflowPath: String? = null,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -105,6 +108,8 @@ fun CreateMissionSheet(
     onDismiss: () -> Unit,
     defaultConversationId: String? = null,
     onCreate: (MissionDraft) -> Unit,
+    /** 批 C — lists `workflows/ 下的 .md` of a workspace (DI: WorkbenchVM → WorkspaceRepository). */
+    loadWorkflows: suspend (String) -> List<String> = { emptyList() },
 ) {
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
@@ -126,6 +131,20 @@ fun CreateMissionSheet(
     var triggerKind by remember { mutableStateOf<String?>(null) }
     var cooldownText by remember { mutableStateOf("60") }
     var maxRunsText by remember { mutableStateOf("24") }
+    // 批 C — workflow document picked from the selected workspace (`workflows/ 下的 .md`).
+    var workflowPath by remember { mutableStateOf<String?>(null) }
+    var workflowNames by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    // Reload the list whenever the workspace changes; drop a selection that no longer exists.
+    androidx.compose.runtime.LaunchedEffect(workspaceId) {
+        workflowNames = workspaceId
+            ?.let { id -> runCatching { loadWorkflows(id) }.getOrDefault(emptyList()) }
+            ?: emptyList()
+        val current = workflowPath
+        if (current != null && current !in workflowNames.map { MissionWorkflowDocs.pathOf(it) }) {
+            workflowPath = null
+        }
+    }
 
     val scheduleHourValid = scheduleHour.toIntOrNull()?.let { it in 0..23 } == true
     val scheduleMinuteValid = scheduleMinute.toIntOrNull()?.let { it in 0..59 } == true
@@ -235,6 +254,39 @@ fun CreateMissionSheet(
                     text = selectedWorkspace?.name
                         ?: stringResource(R.string.mission_create_workspace_none),
                     style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            // 工作流程（批 C）— `workflows/ 下的 .md` in the selected workspace, or "auto"
+            Text(
+                text = stringResource(R.string.mission_create_workflow_title),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterChip(
+                    selected = workflowPath == null,
+                    onClick = { workflowPath = null },
+                    label = { Text(text = stringResource(R.string.mission_create_workflow_auto)) },
+                )
+                workflowNames.forEach { name ->
+                    val path = MissionWorkflowDocs.pathOf(name)
+                    FilterChip(
+                        selected = workflowPath == path,
+                        onClick = { workflowPath = path },
+                        label = { Text(text = name.removeSuffix(".md")) },
+                    )
+                }
+            }
+            if (workspaceId != null && workflowNames.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.mission_create_workflow_empty),
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -453,6 +505,7 @@ fun CreateMissionSheet(
                             trigger = trigger,
                             cooldownSeconds = cooldownText.toIntOrNull() ?: 60,
                             maxRunsPerDay = maxRunsText.toIntOrNull(),
+                            workflowPath = workflowPath,
                         )
                     )
                     onDismiss()

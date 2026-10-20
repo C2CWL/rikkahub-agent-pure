@@ -212,6 +212,15 @@ fun MissionDetailPage(missionId: String) {
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+                            // 批 C — which playbook this mission follows (path only; the
+                            // document lives in the workspace and can be edited there).
+                            m.workflowPath?.takeIf { it.isNotBlank() }?.let { path ->
+                                Text(
+                                    text = stringResource(R.string.mission_workflow_label, path),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                             Text(
                                 text = stringResource(R.string.mission_created_at, relativeTime(m.createdAt)) +
                                     " · " +

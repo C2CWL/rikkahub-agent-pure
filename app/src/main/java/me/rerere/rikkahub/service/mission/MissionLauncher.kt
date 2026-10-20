@@ -2,6 +2,7 @@ package me.rerere.rikkahub.service.mission
 
 import me.rerere.rikkahub.data.agentrun.AgentRunKind
 import me.rerere.rikkahub.data.ai.tools.ConversationSystemAddendum
+import me.rerere.rikkahub.data.mission.MissionEntity
 import me.rerere.rikkahub.data.mission.MissionExecutionState
 import me.rerere.rikkahub.data.mission.MissionRepository
 import me.rerere.rikkahub.data.mission.MissionStatus
@@ -73,6 +74,11 @@ class MissionLauncher(
     private val runEventRepository: RunEventRepository,
     /** mission.assistantId (nullable) → the assistant Uuid to run with; fallback logic lives in DI. */
     private val assistantResolver: suspend (String?) -> Uuid?,
+    /**
+     * 批 C — 工作流程文档的读取出口（DI 接 WorkspaceRepository）；null = 不注入流程。
+     * 测试与旧构造点不传时行为与批 B 完全一致。
+     */
+    private val workflowSource: MissionWorkflowSource? = null,
 ) {
 
     /** Launch (or continue) mission [missionId]; see the class KDoc for the full dance. */
@@ -111,15 +117,22 @@ class MissionLauncher(
                 mission.acceptanceCriteria,
             )
             val prompt = when (source) {
-                LaunchSource.Create -> "$directive\n\n$CREATE_KICKOFF"
+                LaunchSource.Create -> joinBlocks(directive, missionWorkflowBlock(mission), CREATE_KICKOFF)
                 is LaunchSource.Trigger ->
-                    "$directive\n\n[系统] 本任务的开始方式被触发（${source.label}）。" +
-                        "现在开始执行本轮任务：先给简短计划，然后立即动手；完成后调用 mission_report(done)。"
-                is LaunchSource.Continue -> continuePrompt
-                    ?: return LaunchOutcome(
-                        ok = false,
-                        error = "Continue refused: continuePrompt is required",
+                    joinBlocks(
+                        directive,
+                        missionWorkflowBlock(mission),
+                        "[系统] 本任务的开始方式被触发（${source.label}）。" +
+                            "现在开始执行本轮任务：先给简短计划，然后立即动手；完成后调用 mission_report(done)。",
                     )
+                is LaunchSource.Continue -> {
+                    val continueText = continuePrompt
+                        ?: return LaunchOutcome(
+                            ok = false,
+                            error = "Continue refused: continuePrompt is required",
+                        )
+                    joinBlocks(missionWorkflowContinueHint(mission), continueText)
+                }
             }
 
             val assistantId = assistantResolver(mission.assistantId)
@@ -201,4 +214,46 @@ class MissionLauncher(
             )
         }
     }
+
+    /**
+     * 批 C — the workflow section of a fresh round's prompt.
+     *
+     * - pinned (`missions.workflow_path` set): read the document and inject its body. A
+     *   missing/unreadable file degrades to a warning line instead of failing the launch —
+     *   a deleted playbook must not block the mission.
+     * - chooser (no path): list `workflows/ 下的 .md` and tell the model to pick one.
+     * - no source, no workspace, or no documents: inject nothing.
+     */
+    private suspend fun missionWorkflowBlock(mission: MissionEntity): String {
+        val source = workflowSource ?: return ""
+        val workspaceId = mission.workspaceId?.takeIf { it.isNotBlank() } ?: return ""
+
+        val pinned = mission.workflowPath?.takeIf { it.isNotBlank() }
+        if (pinned != null) {
+            val content = runCatching { source.read(workspaceId, pinned) }.getOrNull()
+            return if (content.isNullOrBlank()) {
+                "[工作流程] 任务指定的流程文档 $pinned 无法读取（可能已被删除）；请按任务目标自行推进。"
+            } else {
+                MissionWorkflowDocs.composePinned(pinned, content)
+            }
+        }
+
+        val names = runCatching { source.list(workspaceId) }.getOrNull().orEmpty()
+            .filter { MissionWorkflowDocs.isWorkflowDoc(MissionWorkflowDocs.pathOf(it)) }
+        return MissionWorkflowDocs.composeChooser(names)
+    }
+
+    /**
+     * 批 C — continuation rounds only carry a one-line reminder: the playbook body is
+     * already in the transcript (injected on the first/trigger round), so re-injecting it
+     * every round would just burn tokens.
+     */
+    private fun missionWorkflowContinueHint(mission: MissionEntity): String =
+        mission.workflowPath?.takeIf { it.isNotBlank() }
+            ?.let { MissionWorkflowDocs.composeContinueHint(it) }
+            ?: ""
+
+    /** Joins prompt sections, dropping blanks so no stray double-newlines end up in a prompt. */
+    private fun joinBlocks(vararg blocks: String): String =
+        blocks.filter { it.isNotBlank() }.joinToString("\n\n")
 }

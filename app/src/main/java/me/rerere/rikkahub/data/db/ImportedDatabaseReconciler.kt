@@ -61,9 +61,9 @@ object ImportedDatabaseReconciler {
      * newer *shared* conversation columns were added) or this reconciliation will silently stop
      * matching. `internal` so a JVM test can assert these stay in sync with the schema export.
      */
-    internal const val EXPECTED_VERSION = 36
-    // NOTE: refreshed from the CI-exported schemas/.../36.json identityHash before release.
-    internal const val EXPECTED_IDENTITY_HASH = "ce18ed529006e1cd3feb96db155597e2"
+    internal const val EXPECTED_VERSION = 37
+    // NOTE: refreshed from the CI-exported schemas/.../37.json identityHash before release.
+    internal const val EXPECTED_IDENTITY_HASH = "a794964cf558f9ccbfb4299316ff2434"
 
     /**
      * Columns that a restored file must already have for its shared schema to be considered
@@ -116,6 +116,14 @@ object ImportedDatabaseReconciler {
         "fires_today" to "ALTER TABLE `missions` ADD COLUMN `fires_today` INTEGER NOT NULL DEFAULT 0",
         "fires_day" to "ALTER TABLE `missions` ADD COLUMN `fires_day` TEXT",
         "next_run_at" to "ALTER TABLE `missions` ADD COLUMN `next_run_at` INTEGER",
+    )
+
+    /**
+     * v37 (批 C) adds `missions.workflow_path` — the workspace-relative .md playbook the
+     * mission follows. Nullable, so a restored v36 file only needs the column added.
+     */
+    private val MISSION_V37_COLUMN_DDL: List<Pair<String, String>> = listOf(
+        "workflow_path" to "ALTER TABLE `missions` ADD COLUMN `workflow_path` TEXT",
     )
 
     /**
@@ -255,6 +263,12 @@ object ImportedDatabaseReconciler {
                             }
                             // v36 — trigger / schedule columns (批 B).
                             MISSION_V36_COLUMN_DDL.forEach { (column, ddl) ->
+                                if (!hasColumn(db, "missions", column)) {
+                                    db.execSQL(ddl)
+                                }
+                            }
+                            // v37 — workflow document path (批 C).
+                            MISSION_V37_COLUMN_DDL.forEach { (column, ddl) ->
                                 if (!hasColumn(db, "missions", column)) {
                                     db.execSQL(ddl)
                                 }

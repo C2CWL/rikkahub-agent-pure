@@ -331,6 +331,7 @@ val dataSourceModule = module {
     // snapshot is read once per launch so a mid-session assistant switch is picked up.
     single {
         val settingsStore = get<SettingsStore>()
+        val workspaceRepository = get<me.rerere.rikkahub.data.repository.WorkspaceRepository>()
         me.rerere.rikkahub.service.mission.MissionLauncher(
             missionRepository = get(),
             runService = get(),
@@ -341,6 +342,24 @@ val dataSourceModule = module {
                 parsed?.takeIf { id -> settings.assistants.any { it.id == id } }
                     ?: settings.assistantId.takeIf { id -> settings.assistants.any { it.id == id } }
                     ?: settings.assistants.firstOrNull()?.id
+            },
+            // 批 C — workflow documents live in the mission workspace's FILES area,
+            // `workflows/ 下的 .md`. Reading is best-effort: a missing file degrades to a
+            // warning line in the prompt, never a failed launch.
+            workflowSource = object : me.rerere.rikkahub.service.mission.MissionWorkflowSource {
+                override suspend fun list(workspaceId: String): List<String> = runCatching {
+                    workspaceRepository.listFiles(
+                        id = workspaceId,
+                        area = me.rerere.workspace.WorkspaceStorageArea.FILES,
+                        path = me.rerere.rikkahub.service.mission.WORKFLOW_DIR,
+                    )
+                        .filter { !it.isDirectory && it.name.endsWith(".md", ignoreCase = true) }
+                        .map { it.name }
+                        .sorted()
+                }.getOrDefault(emptyList())
+
+                override suspend fun read(workspaceId: String, path: String): String? =
+                    runCatching { workspaceRepository.readText(workspaceId, path) }.getOrNull()
             },
         )
     }

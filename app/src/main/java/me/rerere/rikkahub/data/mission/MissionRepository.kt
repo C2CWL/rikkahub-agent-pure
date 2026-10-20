@@ -61,6 +61,7 @@ class MissionRepository(
         triggerJson: String? = null,
         cooldownSeconds: Int = 0,
         maxRunsPerDay: Int? = null,
+        workflowPath: String? = null,
     ): MissionEntity {
         val id = Uuid.random().toString()
         val now = System.currentTimeMillis()
@@ -80,6 +81,7 @@ class MissionRepository(
             triggerJson = triggerJson,
             cooldownSeconds = cooldownSeconds.coerceAtLeast(0),
             maxRunsPerDay = maxRunsPerDay?.coerceAtLeast(1),
+            workflowPath = workflowPath?.takeIf { it.isNotBlank() },
         )
         writeMutex.withLock {
             dao.upsert(entity)
@@ -267,6 +269,22 @@ class MissionRepository(
                 existing.copy(
                     workspaceId = workspaceId,
                     assistantId = assistantId,
+                    updatedAt = System.currentTimeMillis(),
+                )
+            )
+        }
+    }
+
+    /**
+     * 批 C — point the mission at a workflow document (workspace-relative path), or clear it
+     * (`null`) to go back to "let the model choose". Safe no-op when the mission is gone.
+     */
+    suspend fun updateWorkflowPath(id: String, workflowPath: String?) {
+        writeMutex.withLock {
+            val existing = dao.getById(id) ?: return@withLock
+            dao.upsert(
+                existing.copy(
+                    workflowPath = workflowPath?.takeIf { it.isNotBlank() },
                     updatedAt = System.currentTimeMillis(),
                 )
             )

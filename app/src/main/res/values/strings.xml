@@ -3285,6 +3285,10 @@ HARDLINE protections still apply: rm -rf /, mkfs, shutdown / reboot, dd to block
   <string name="mission_create_assistant">Execution assistant</string>
   <string name="mission_create_assistant_default">Default</string>
   <string name="mission_create_workspace">Workspace</string>
+  <string name="mission_create_workflow_title">Workflow</string>
+  <string name="mission_create_workflow_auto">Let the model choose</string>
+  <string name="mission_create_workflow_empty">Put .md files in the workspace workflows/ folder to pin one here.</string>
+  <string name="mission_workflow_label">Workflow: %1$s</string>
   <string name="mission_create_workspace_none">Not bound</string>
   <string name="mission_create_approval_mode">Approval mode</string>
   <string name="mission_approval_default">Default</string>

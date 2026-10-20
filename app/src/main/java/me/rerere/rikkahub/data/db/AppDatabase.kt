@@ -75,7 +75,7 @@ import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
         RunEventEntity::class,
         RunCheckpointEntity::class,
     ],
-    version = 36,
+    version = 37,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -146,6 +146,11 @@ import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
         // Pure nullable/defaulted additions, so Room's auto-diff handles them; the
         // backup-restore path backfills them in ImportedDatabaseReconciler.
         AutoMigration(from = 35, to = 36),
+        // v37 (批 C, workflow documents): `missions.workflow_path` — the workspace-relative
+        // .md playbook a mission follows (null = the model chooses / works without one).
+        // Nullable addition, so Room's auto-diff handles it; the backup-restore path
+        // backfills it in ImportedDatabaseReconciler.
+        AutoMigration(from = 36, to = 37),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)

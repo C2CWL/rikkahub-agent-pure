@@ -3000,6 +3000,10 @@ HARDLINE 保护仍然生效：rm -rf /、mkfs、shutdown / reboot、向块设备
   <string name="mission_create_assistant">执行助手</string>
   <string name="mission_create_assistant_default">默认</string>
   <string name="mission_create_workspace">工作区</string>
+  <string name="mission_create_workflow_title">工作流程</string>
+  <string name="mission_create_workflow_auto">由模型自选</string>
+  <string name="mission_create_workflow_empty">在工作区的 workflows/ 目录放 .md 文件，即可在这里指定流程。</string>
+  <string name="mission_workflow_label">工作流程：%1$s</string>
   <string name="mission_create_workspace_none">不绑定</string>
   <string name="mission_create_approval_mode">审批模式</string>
   <string name="mission_approval_default">默认</string>

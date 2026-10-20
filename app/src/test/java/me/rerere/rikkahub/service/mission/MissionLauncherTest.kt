@@ -87,7 +87,10 @@ class MissionLauncherTest {
         override fun events(handle: RunHandle): Flow<List<RunEventEntity>> = flowOf(emptyList())
     }
 
-    private class Fixture(freshHandleConversation: Boolean = false) {
+    private class Fixture(
+        freshHandleConversation: Boolean = false,
+        workflowSource: MissionWorkflowSource? = null,
+    ) {
         val missionDao = FakeMissionDao()
         val runEventDao = FakeRunEventDao()
         val runEvents = RunEventRepository(runEventDao)
@@ -102,6 +105,7 @@ class MissionLauncherTest {
             runService = runService,
             runEventRepository = runEvents,
             assistantResolver = { assistantResult },
+            workflowSource = workflowSource,
         )
 
         suspend fun seed(mission: MissionEntity) = missionDao.upsert(mission)
@@ -120,6 +124,8 @@ class MissionLauncherTest {
         conversationId: String? = null,
         status: String = MissionStatus.ACTIVE.name,
         approvalMode: String? = null,
+        workspaceId: String? = null,
+        workflowPath: String? = null,
     ) = MissionEntity(
         id = id,
         title = "写周报",
@@ -127,9 +133,123 @@ class MissionLauncherTest {
         status = status,
         conversationId = conversationId,
         approvalMode = approvalMode,
+        workspaceId = workspaceId,
+        workflowPath = workflowPath,
         createdAt = 1_000L,
         updatedAt = 1_000L,
     )
+
+    // ---------------------------------------------------------------- 批 C: workflow docs
+
+    /** `docs` is keyed by full relative path (`workflows/x.md`). */
+    private class FakeWorkflowSource(
+        val docs: MutableMap<String, String> = mutableMapOf(),
+    ) : MissionWorkflowSource {
+        var lastWorkspaceId: String? = null
+
+        override suspend fun list(workspaceId: String): List<String> {
+            lastWorkspaceId = workspaceId
+            return docs.keys.map { it.substringAfterLast('/') }.sorted()
+        }
+
+        override suspend fun read(workspaceId: String, path: String): String? {
+            lastWorkspaceId = workspaceId
+            return docs[path]
+        }
+    }
+
+    @Test
+    fun `a pinned workflow document is injected into the create prompt`() = runBlocking {
+        val docs = FakeWorkflowSource(
+            mutableMapOf("workflows/周报.md" to "1. 收集数据\n2. 写正文\n3. 存档"),
+        )
+        val fx = Fixture(workflowSource = docs)
+        fx.seed(mission(id = "m-wf1", workspaceId = "ws-1", workflowPath = "workflows/周报.md"))
+
+        fx.launcher.launch("m-wf1", LaunchSource.Create)
+
+        val prompt = fx.runService.submitted.single().prompt
+        assertTrue("the path is named", prompt.contains("workflows/周报.md"))
+        assertTrue("the body is injected", prompt.contains("1. 收集数据"))
+        assertTrue("the block is delimited", prompt.contains("--- 流程开始 ---"))
+        assertTrue(
+            "conflicts defer to the mission goal",
+            prompt.contains("以任务目标为准"),
+        )
+        assertEquals("ws-1", docs.lastWorkspaceId)
+    }
+
+    @Test
+    fun `without a pinned document the prompt lists what is available`() = runBlocking {
+        val docs = FakeWorkflowSource(
+            mutableMapOf(
+                "workflows/日报.md" to "日报流程",
+                "workflows/周报.md" to "周报流程",
+            ),
+        )
+        val fx = Fixture(workflowSource = docs)
+        fx.seed(mission(id = "m-wf2", workspaceId = "ws-1"))
+
+        fx.launcher.launch("m-wf2", LaunchSource.Create)
+
+        val prompt = fx.runService.submitted.single().prompt
+        assertTrue("the chooser block is present", prompt.contains("本任务未指定流程"))
+        assertTrue("documents are listed", prompt.contains("- 日报.md") && prompt.contains("- 周报.md"))
+        assertTrue("the model is told to pick one", prompt.contains("最适合本任务"))
+    }
+
+    @Test
+    fun `an empty workflow folder adds no workflow section`() = runBlocking {
+        val fx = Fixture(workflowSource = FakeWorkflowSource())
+        fx.seed(mission(id = "m-wf3", workspaceId = "ws-1"))
+
+        fx.launcher.launch("m-wf3", LaunchSource.Create)
+
+        val prompt = fx.runService.submitted.single().prompt
+        assertFalse("nothing to say, so nothing is injected", prompt.contains("[工作流程]"))
+    }
+
+    @Test
+    fun `a deleted workflow file degrades to a warning instead of failing the launch`() = runBlocking {
+        val fx = Fixture(workflowSource = FakeWorkflowSource())
+        fx.seed(mission(id = "m-wf4", workspaceId = "ws-1", workflowPath = "workflows/gone.md"))
+
+        val outcome = fx.launcher.launch("m-wf4", LaunchSource.Create)
+
+        assertTrue("the launch still succeeds", outcome.ok)
+        val prompt = fx.runService.submitted.single().prompt
+        assertTrue("the model is warned", prompt.contains("无法读取"))
+        assertTrue("the goal still drives the round", prompt.contains("总结本周进展"))
+    }
+
+    @Test
+    fun `a continuation only carries a one-line workflow reminder`() = runBlocking {
+        val docs = FakeWorkflowSource(
+            mutableMapOf("workflows/周报.md" to "很长的流程正文"),
+        )
+        val fx = Fixture(workflowSource = docs)
+        fx.seed(
+            mission(
+                id = "m-wf5",
+                conversationId = "33333333-3333-3333-3333-333333333333",
+                workspaceId = "ws-1",
+                workflowPath = "workflows/周报.md",
+            )
+        )
+
+        fx.launcher.launch("m-wf5", LaunchSource.Continue(1), continuePrompt = "[任务督导] 继续")
+
+        val prompt = fx.runService.submitted.single().prompt
+        assertTrue("the reminder names the file", prompt.contains("继续沿用本任务的工作流程"))
+        assertTrue(
+            "the body is NOT re-injected on every round",
+            !prompt.contains("很长的流程正文"),
+        )
+        fx.runService.handles.forEach { handle ->
+            MissionSessions.unregister(handle.conversationId.toString())
+            ConversationSystemAddendum.clear(handle.conversationId)
+        }
+    }
 
     // ---------------------------------------------------------------- create
 
