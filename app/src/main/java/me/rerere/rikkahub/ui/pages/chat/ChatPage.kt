@@ -317,6 +317,12 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                         else -> {
                             ModalNavigationDrawer(
                                 drawerState = drawerState,
+                                // No scrim: in this stack the chat page is the raised card, so
+                                // dimming it would flatten the two layers back into one. The
+                                // drawer dims itself instead, and the open drawer still closes on
+                                // a scrim tap — M3 composes the scrim either way, it is only its
+                                // colour that goes away.
+                                scrimColor = Color.Transparent,
                                 drawerContent = {
                                     ChatDrawerContent(
                                         navController = navController,

@@ -54,6 +54,18 @@ class PushDrawerTransitionTest {
     }
 
     @Test
+    fun `drawer always dims itself below the chat page`() {
+        // In a dark theme every surfaceContainer* is *lighter* than `background`, so the "drawer is
+        // underneath" cue cannot come from the surface step alone — it comes from this dim.
+        assertTrue(drawerDimAlpha(darkTheme = false) > 0f)
+        assertTrue(drawerDimAlpha(darkTheme = true) > 0f)
+        assertTrue(
+            "a dark theme needs the stronger dim",
+            drawerDimAlpha(darkTheme = true) > drawerDimAlpha(darkTheme = false),
+        )
+    }
+
+    @Test
     fun `page does not move until the sheet has peeled off the edge`() {
         assertEquals(0f, stagedPush(0f), 1e-6f)
         assertEquals(0f, stagedPush(0.05f), 1e-6f)

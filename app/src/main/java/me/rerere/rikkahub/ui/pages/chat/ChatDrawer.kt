@@ -55,6 +55,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
@@ -99,6 +100,9 @@ import me.rerere.rikkahub.ui.components.ui.BackupReminderCard
 import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.ui.components.ui.AssistantAvatar
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.components.ui.SEAM_SHADOW_WIDTH
+import me.rerere.rikkahub.ui.components.ui.conversationDrawerSurface
+import me.rerere.rikkahub.ui.components.ui.drawerSeamShadowAlpha
 import me.rerere.rikkahub.ui.components.ui.UpdateCard
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -218,15 +222,19 @@ fun ChatDrawerContent(
     val topAreaHeight = with(LocalDensity.current) { topAreaHeightPx.toDp() }
 
     // ── 抽屉的视觉语言 ──────────────────────────────────────────────────────────
-    // 整块抽屉是一张从左边滑进来的卡片：右侧两个大圆角、内部压一层同色系竖向薄纱（保住磨砂的
-    // 通透，同时让压在照片背景上的长标题读得清）、右缘一道高光棱线。功能区再叠两张更亮的卡片，
-    // 用「渐变面板 + 1dp 描边 + 软阴影」三层做厚度——只靠 M3 的 tonalElevation，深色模式里几乎
-    // 看不出层次。
+    // 这一叠的上下关系是「聊天页在上、抽屉在下」：抽屉是被压住的那块底板，聊天页是被推开的
+    // 那张盖板（见 PushDrawerContent）。所以抽屉这边刻意不做任何「浮起来」的暗示——
+    //   · 直角，没有右侧圆角（圆角只属于上面那张盖板）；
+    //   · 面色比聊天页暗一档（conversationDrawerSurface），页面对比之下就亮了起来；
+    //   · 右缘不再有高光棱线，而是一道页面投下来的阴影；
+    //   · 底色和 PushDrawerContent 的 seamColor 共用同一个值，盖板圆角切掉的那一小块才会
+    //     和抽屉连成一片，而不是露出一块颜色不同的独立背景。
+    // 抽屉内部的功能卡仍然叠「渐变面板 + 1dp 描边 + 软阴影」三层做厚度——它们是抽屉这张
+    // 板子上的卡，和抽屉本身谁是上层并不冲突。
     val scheme = MaterialTheme.colorScheme
     val darkTheme = LocalDarkMode.current
-    // 28dp 与 PushDrawerContent 的 cornerRadius 默认值保持一致：抽屉的右缘圆角和被推开页面的
-    // 左缘圆角是同一个接缝的两侧，半径不同会在接缝两端露一高一低的缺口。
-    val drawerShape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp)
+    val drawerSurface = conversationDrawerSurface(darkTheme)
+    val drawerShape: Shape = RectangleShape
     val cardShape = RoundedCornerShape(22.dp)
     val drawerBlurStyle = HazeBlurStyle.Material3 {
         blurRadius(26.dp)
@@ -332,11 +340,13 @@ fun ChatDrawerContent(
             )
             // 薄纱画在 sheet 的 modifier 上，而不是内容里：ModalDrawerSheet 的内容会被系统栏
             // 内边距推开，画在内容里的话状态栏那一条没有薄纱，会露出一道颜色不同的横带。
+            // 颜色取 drawerSurface 本身，和 PushDrawerContent 的 seamColor 是同一个值；那层压暗
+            // 已经含在 drawerSurface 里，这里不再重复叠。
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        scheme.surface.copy(alpha = if (darkTheme) 0.92f else 0.88f),
-                        scheme.surfaceContainerLow.copy(alpha = if (darkTheme) 0.97f else 0.94f),
+                        drawerSurface.copy(alpha = if (darkTheme) 0.93f else 0.90f),
+                        drawerSurface.copy(alpha = if (darkTheme) 0.98f else 0.96f),
                     )
                 )
             ),
@@ -381,6 +391,25 @@ fun ChatDrawerContent(
                     conversationToMoveFolder = it
                     showMoveToFolderSheet = true
                 }
+            )
+
+            // 页面投在抽屉上的阴影：贴着右缘、向右渐深的一窄条。
+            // 它画在列表之后、上下卡片之前，于是那两张浮起来的卡片会盖住它——阴影只落在
+            // 抽屉的底板上，不会顺着卡片边缘泛出一道灰边。
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .width(SEAM_SHADOW_WIDTH)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(
+                                Color.Transparent,
+                                // 与 PushDrawerContent 在页面圆角断口处补的那一条同源同强度。
+                                scheme.scrim.copy(alpha = drawerSeamShadowAlpha(darkTheme)),
+                            )
+                        )
+                    )
             )
 
                 // 上方功能区：固定悬浮在抽屉顶部，对话列表从其下方滚过时被玻璃折射虚化。
@@ -508,23 +537,6 @@ fun ChatDrawerContent(
                         }
                     }
                 }
-
-                // 右缘棱线：一条自上而下渐隐的高光，把卡片从背后的页面里「切」出来。
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .fillMaxHeight()
-                        .width(1.dp)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    Color.Transparent,
-                                    Color.White.copy(alpha = if (darkTheme) 0.10f else 0.60f),
-                                    Color.Transparent,
-                                )
-                            )
-                        )
-                )
         }
     }
 
