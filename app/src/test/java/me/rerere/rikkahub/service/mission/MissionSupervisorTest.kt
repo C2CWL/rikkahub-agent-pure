@@ -387,6 +387,26 @@ class MissionSupervisorTest {
     }
 
     @Test
+    fun `a replayed older round cannot continue the live round`() = runBlocking {
+        val fx = Fixture()
+        // The process restarted mid-round: lastRunId is the resumed round. The journal tail
+        // replayed on start still contains the PREVIOUS round's RUN_FINISHED.
+        fx.seed(mission(id = "m8d", conversationId = CONV1, lastRunId = "r-current"))
+        fx.runEvents.emit(
+            type = RunEventType.TOOL_RESULT,
+            title = "tool",
+            missionId = "m8d",
+            runId = "r-old",
+        )
+        val finished = fx.finishedEvent(runId = "r-old", missionId = "m8d")
+
+        fx.supervisor.handleRunFinished(finished)
+
+        assertTrue("a stale round must not launch a duplicate", fx.runService.submitted.isEmpty())
+        assertEquals(MissionExecutionState.RUNNING.name, fx.missionDao.getById("m8d")!!.executionState)
+    }
+
+    @Test
     fun `a round ending after the user parked the mission is not continued`() = runBlocking {
         val fx = Fixture()
         // The stop button parks the posture IDLE before the generation finishes winding down.

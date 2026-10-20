@@ -174,6 +174,12 @@ class MissionSupervisor(
             if (!processedRuns.add(runId)) return
 
             val mission = missionRepository.getById(missionId) ?: return
+            // Only the mission's CURRENT round may drive continuation. The journal
+            // subscription replays a tail on every process start, so an older round's
+            // RUN_FINISHED would otherwise launch a duplicate round while the live one is
+            // still running. (A null lastRunId is legacy data — stay lenient.)
+            val currentRunId = mission.lastRunId
+            if (currentRunId != null && currentRunId != runId) return
             if (mission.statusEnum != MissionStatus.ACTIVE) {
                 // The user completed / archived the mission while this round was still in
                 // flight. Its end is not a continuation trigger; park the posture so a
