@@ -2155,6 +2155,7 @@ HARDLINE protections still apply: rm -rf /, mkfs, shutdown / reboot, dd to block
   <string name="image_preview_saved">Image saved</string>
   <string name="attachment_open_failed">Cannot open this file</string>
   <string name="chat_drawer_statistics">Statistics</string>
+  <string name="chat_drawer_search_hint">Search conversations…</string>
   <string name="translator_error_generic">Error</string>
   <string name="translator_paste_text">Paste text</string>
   <string name="translator_copy_result">Copy translation</string>

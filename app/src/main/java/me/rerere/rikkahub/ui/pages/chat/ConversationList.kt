@@ -10,6 +10,7 @@ import me.rerere.hugeicons.stroke.PencilEdit01
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -40,7 +41,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -190,8 +193,8 @@ private fun DateHeaderItem(
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
         )
     }
 }
@@ -237,11 +240,19 @@ private fun ConversationItem(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focusManager = LocalFocusManager.current
-    val itemShape = RoundedCornerShape(12.dp)
-    val backgroundColor = if (selected) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+    // 条目是一颗很小的卡片：14dp 圆角 + 选中时一层从左到右变淡的主色渐变，再压一圈同色描边。
+    // 比整块平涂更容易在磨砂抽屉上「浮」出来，也把选中项的边界说清楚。
+    val itemShape = RoundedCornerShape(14.dp)
+    val scheme = MaterialTheme.colorScheme
+    val backgroundColor: Brush = if (selected) {
+        Brush.horizontalGradient(
+            listOf(
+                scheme.primary.copy(alpha = 0.18f),
+                scheme.primary.copy(alpha = 0.05f),
+            )
+        )
     } else {
-        Color.Transparent
+        SolidColor(Color.Transparent)
     }
     val timeText = remember(conversation.updateAt) {
         val zoneId = ZoneId.systemDefault()
@@ -271,12 +282,24 @@ private fun ConversationItem(
                     showDropdownMenu = true
                 }
             )
-            .background(backgroundColor),
+            .background(backgroundColor)
+            // 描边必须画在渐变之上，否则会被那层渐变整个盖住。
+            .then(
+                if (selected) {
+                    Modifier.border(
+                        width = 1.dp,
+                        color = scheme.primary.copy(alpha = 0.22f),
+                        shape = itemShape,
+                    )
+                } else {
+                    Modifier
+                }
+            ),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                .padding(horizontal = 10.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
@@ -292,7 +315,7 @@ private fun ConversationItem(
                 text = conversation.title.ifBlank { stringResource(id = R.string.chat_page_new_message) },
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                color = if (selected) scheme.onSurface else scheme.onSurface.copy(alpha = 0.85f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)

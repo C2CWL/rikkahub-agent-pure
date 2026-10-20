@@ -1261,6 +1261,7 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
   <string name="browser_mini_chat_send">送信</string>
   <string name="browser_mini_chat_title">AI に質問</string>
   <string name="chat_drawer_statistics">統計</string>
+  <string name="chat_drawer_search_hint">会話を検索…</string>
   <string name="chat_message_tool_schedule_job_warning">⏰ スケジュールジョブはツールごとの承認なしで自律的に実行されます。これを承認すると、ジョブは発火するたびに完全なツールアクセス権で実行されます。HARDLINE でブロックされたコマンドは引き続き実行できません。</string>
   <string name="chat_select_model_first">先にモデルを選択してください</string>
   <string name="chat_stop_generation_before_delete">メッセージを削除する前に生成を停止してください</string>
