@@ -1322,6 +1322,7 @@
   <string name="browser_mini_chat_send">傳送</string>
   <string name="browser_mini_chat_title">詢問 AI</string>
   <string name="chat_drawer_statistics">統計資料</string>
+  <string name="chat_drawer_search_hint">搜尋對話內容…</string>
   <string name="chat_message_tool_schedule_job_warning">⏰ 排程任務自主執行，無需逐個工具授權。核准此項後，任務在每次觸發時都能以完整工具存取權限執行。被 HARDLINE 攔截的指令仍然無法執行。</string>
   <string name="chat_select_model_first">請先選擇模型</string>
   <string name="chat_stop_generation_before_delete">請先停止產生再刪除訊息</string>

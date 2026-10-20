@@ -70,6 +70,8 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.glass.hazeGlass
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
+import me.rerere.rikkahub.ui.components.ui.PushDrawerContent
+import me.rerere.rikkahub.ui.components.ui.conversationDrawerWidthFor
 import me.rerere.rikkahub.ui.components.ui.rikkaGlassStyle
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import kotlinx.coroutines.Job
@@ -192,6 +194,11 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
         }
     }
 
+    // The drawer's width, the distance the page is pushed and the page card's corner radius are
+    // all derived from this one value: if they ever disagree the sheet and the page show a seam
+    // (or overlap) at the end of the open animation.
+    val conversationDrawerWidth = conversationDrawerWidthFor(windowAdaptiveInfo.width)
+
     val startVoiceMode = rememberVoiceModeStarter(vm, setting)
 
     val inputState = vm.inputState
@@ -271,79 +278,88 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                         ),
                 ) {
                     when {
-        isBigScreen -> {
-            PermanentNavigationDrawer(
-                drawerContent = {
-                    ChatDrawerContent(
-                        navController = navController,
-                        current = conversation,
-                        vm = vm,
-                        settings = setting,
-                        hazeState = hazeState,
-                    )
-                }
-            ) {
-                ChatPageContent(
-                    onStartVoiceMode = startVoiceMode,
-                    inputState = inputState,
-                    loadingJob = loadingJob,
-                    processingStatus = mergedStatus,
-                    setting = setting,
-                    conversation = conversation,
-                    drawerState = drawerState,
-                    navController = navController,
-                    vm = vm,
-                    chatListState = chatListState,
-                    hazeState = hazeState,
-                    enableWebSearch = enableWebSearch,
-                    currentChatModel = currentChatModel,
-                    bigScreen = true,
-                    errors = errors,
-                    onDismissError = { vm.dismissError(it) },
-                    onClearAllErrors = { vm.clearAllErrors() },
-                    onOpenWorkbench = { scope.launch { workbenchDrawerState.open() } },
-                )
-            }
-        }
+                        isBigScreen -> {
+                            PermanentNavigationDrawer(
+                                drawerContent = {
+                                    ChatDrawerContent(
+                                        navController = navController,
+                                        current = conversation,
+                                        vm = vm,
+                                        settings = setting,
+                                        hazeState = hazeState,
+                                        drawerWidth = conversationDrawerWidth,
+                                    )
+                                }
+                            ) {
+                                ChatPageContent(
+                                    onStartVoiceMode = startVoiceMode,
+                                    inputState = inputState,
+                                    loadingJob = loadingJob,
+                                    processingStatus = mergedStatus,
+                                    setting = setting,
+                                    conversation = conversation,
+                                    drawerState = drawerState,
+                                    navController = navController,
+                                    vm = vm,
+                                    chatListState = chatListState,
+                                    hazeState = hazeState,
+                                    enableWebSearch = enableWebSearch,
+                                    currentChatModel = currentChatModel,
+                                    bigScreen = true,
+                                    errors = errors,
+                                    onDismissError = { vm.dismissError(it) },
+                                    onClearAllErrors = { vm.clearAllErrors() },
+                                    onOpenWorkbench = { scope.launch { workbenchDrawerState.open() } },
+                                )
+                            }
+                        }
 
-        else -> {
-            ModalNavigationDrawer(
-                drawerState = drawerState,
-                drawerContent = {
-                    ChatDrawerContent(
-                        navController = navController,
-                        current = conversation,
-                        vm = vm,
-                        settings = setting,
-                        hazeState = hazeState,
-                    )
-                }
-            ) {
-                ChatPageContent(
-                    onStartVoiceMode = startVoiceMode,
-                    inputState = inputState,
-                    loadingJob = loadingJob,
-                    processingStatus = mergedStatus,
-                    setting = setting,
-                    conversation = conversation,
-                    drawerState = drawerState,
-                    navController = navController,
-                    vm = vm,
-                    chatListState = chatListState,
-                    hazeState = hazeState,
-                    enableWebSearch = enableWebSearch,
-                    currentChatModel = currentChatModel,
-                    bigScreen = false,
-                    errors = errors,
-                    onDismissError = { vm.dismissError(it) },
-                    onClearAllErrors = { vm.clearAllErrors() },
-                    onOpenWorkbench = { scope.launch { workbenchDrawerState.open() } },
-                )
-            }
-            BackHandler(drawerState.isOpen) {
-                scope.launch { drawerState.close() }
-            }
-        }
+                        else -> {
+                            ModalNavigationDrawer(
+                                drawerState = drawerState,
+                                drawerContent = {
+                                    ChatDrawerContent(
+                                        navController = navController,
+                                        current = conversation,
+                                        vm = vm,
+                                        settings = setting,
+                                        hazeState = hazeState,
+                                        drawerWidth = conversationDrawerWidth,
+                                    )
+                                },
+                            ) {
+                                // Push transition: the sheet comes in, the chat itself is pushed
+                                // aside and rounds its leading corners into a stacked card.
+                                PushDrawerContent(
+                                    drawerState = drawerState,
+                                    drawerWidth = conversationDrawerWidth,
+                                ) {
+                                    ChatPageContent(
+                                        onStartVoiceMode = startVoiceMode,
+                                        inputState = inputState,
+                                        loadingJob = loadingJob,
+                                        processingStatus = mergedStatus,
+                                        setting = setting,
+                                        conversation = conversation,
+                                        drawerState = drawerState,
+                                        navController = navController,
+                                        vm = vm,
+                                        chatListState = chatListState,
+                                        hazeState = hazeState,
+                                        enableWebSearch = enableWebSearch,
+                                        currentChatModel = currentChatModel,
+                                        bigScreen = false,
+                                        errors = errors,
+                                        onDismissError = { vm.dismissError(it) },
+                                        onClearAllErrors = { vm.clearAllErrors() },
+                                        onOpenWorkbench = { scope.launch { workbenchDrawerState.open() } },
+                                    )
+                                }
+                            }
+                            BackHandler(drawerState.isOpen) {
+                                scope.launch { drawerState.close() }
+                            }
+                        }
                     }
                 }
             }

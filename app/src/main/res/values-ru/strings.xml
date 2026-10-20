@@ -1261,6 +1261,7 @@
   <string name="browser_mini_chat_send">Отправить</string>
   <string name="browser_mini_chat_title">Спросить ИИ</string>
   <string name="chat_drawer_statistics">Статистика</string>
+  <string name="chat_drawer_search_hint">Поиск по диалогам…</string>
   <string name="chat_message_tool_schedule_job_warning">⏰ Запланированные задачи выполняются автономно без одобрения каждого инструмента. Одобрение этого позволяет задаче выполняться с полным доступом к инструментам при каждом срабатывании. Команды, заблокированные HARDLINE, по-прежнему не могут выполняться.</string>
   <string name="chat_select_model_first">Сначала выберите модель</string>
   <string name="chat_stop_generation_before_delete">Сначала остановите генерацию, прежде чем удалять сообщения</string>

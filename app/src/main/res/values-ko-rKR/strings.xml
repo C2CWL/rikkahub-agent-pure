@@ -1261,6 +1261,7 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
   <string name="browser_mini_chat_send">보내기</string>
   <string name="browser_mini_chat_title">AI에게 묻기</string>
   <string name="chat_drawer_statistics">통계</string>
+  <string name="chat_drawer_search_hint">대화 검색…</string>
   <string name="chat_message_tool_schedule_job_warning">⏰ 예약 작업은 도구별 승인 없이 자율적으로 실행됩니다. 이를 승인하면 작업은 실행될 때마다 전체 도구 액세스 권한으로 실행됩니다. HARDLINE으로 차단된 명령은 여전히 실행할 수 없습니다.</string>
   <string name="chat_select_model_first">먼저 모델을 선택하세요</string>
   <string name="chat_stop_generation_before_delete">메시지를 삭제하기 전에 생성을 중지하세요</string>
