@@ -165,10 +165,10 @@ class RikkaHubApp : Application() {
         // Increment launch count
         incrementLaunchCount()
 
-        // Phase 12: kick off the workflow trigger registry. It subscribes to the workflows
-        // table and reconciles broadcast receivers / geofences / time_cron schedules with
-        // every change. With zero enabled workflows, no receivers are registered.
-        startWorkflowRegistry()
+        // 批 B — start modes (time / event triggers) now live on missions. The mission scheduler
+        // reconciles the reused trigger families with the armed mission set; the legacy
+        // workflow registry is retired and no longer started.
+        runMissionScheduler()
 
         // Phase-17 stability — register a network-change monitor that evicts OkHttp's
         // connection pool on every default-network transition. Fixes the post-Termux-
@@ -354,15 +354,15 @@ class RikkaHubApp : Application() {
         }
     }
 
-    private fun startWorkflowRegistry() {
+    private fun runMissionScheduler() {
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching {
-                val registry = get<me.rerere.rikkahub.workflow.trigger.TriggerRegistry>()
-                val engine = get<me.rerere.rikkahub.workflow.execution.WorkflowEngine>()
-                registry.setEngineCallback(engine.triggerCallback)
-                registry.start()
+                // 批 B — start modes now live on missions; the legacy workflow registry is no
+                // longer started (see LegacyAutomation).
+                val scheduler = get<me.rerere.rikkahub.service.mission.MissionScheduler>()
+                scheduler.start()
             }.onFailure {
-                Log.e(TAG, "startWorkflowRegistry failed", it)
+                Log.e(TAG, "runMissionScheduler failed", it)
             }
         }
     }

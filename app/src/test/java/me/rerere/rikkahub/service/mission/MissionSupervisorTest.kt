@@ -450,6 +450,48 @@ class MissionSupervisorTest {
         fx.scope.cancel()
     }
 
+    // ---------------------------------------------------------------- recurring missions
+
+    @Test
+    fun `done signal on a recurring mission ends the occurrence not the mission`() = runBlocking {
+        val fx = Fixture()
+        val recurring = mission(id = "m11", conversationId = CONV1, resumeCount = 2)
+            .copy(triggerJson = """{"type":"power_connected"}""")
+        fx.seed(recurring)
+        fx.runStatuses["r11"] = "succeeded"
+        fx.runEvents.emit(
+            type = RunEventType.NOTE,
+            title = "mission_report: done",
+            payloadJson = """{"mission_signal":"done","note":"本轮交付：电源事件周报已更新"}""",
+            missionId = "m11",
+            conversationId = CONV1,
+            runId = "r11",
+        )
+        val finished = fx.finishedEvent(runId = "r11", missionId = "m11")
+
+        fx.supervisor.handleRunFinished(finished)
+
+        val row = fx.missionDao.getById("m11")!!
+        assertEquals(
+            "a recurring mission stays ACTIVE for the next fire",
+            MissionStatus.ACTIVE.name,
+            row.status,
+        )
+        assertEquals(MissionExecutionState.IDLE.name, row.executionState)
+        assertEquals("the next occurrence gets a fresh resume budget", 0, row.resumeCount)
+        assertTrue("the occurrence end must not launch a continuation", fx.runService.submitted.isEmpty())
+
+        val occurrence = fx.runEventDao.snapshot().single {
+            it.missionId == "m11" && it.title == "occurrence_done"
+        }
+        assertEquals(RunEventType.NOTE.name, occurrence.type)
+        assertEquals("本轮交付：电源事件周报已更新", occurrence.detail)
+
+        val notice = fx.notifications.single()
+        assertTrue("the notification announces the occurrence", notice.first.contains("本轮完成"))
+        assertEquals("本轮交付：电源事件周报已更新", notice.second)
+    }
+
     // ---------------------------------------------------------------- mission_report tool
 
     @Test

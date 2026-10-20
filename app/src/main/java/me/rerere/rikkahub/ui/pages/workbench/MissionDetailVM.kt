@@ -69,6 +69,13 @@ class MissionDetailVM(
         }
     }
 
+    /** 批 B — arm / pause the mission's start trigger. */
+    fun setTriggerEnabled(id: String, enabled: Boolean) {
+        viewModelScope.launch {
+            missionRepository.setTriggerEnabled(id, enabled)
+        }
+    }
+
     fun addNote(text: String) {
         viewModelScope.launch {
             missionRepository.logEvent(

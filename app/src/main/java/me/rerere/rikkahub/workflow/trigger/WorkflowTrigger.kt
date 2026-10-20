@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.workflow.trigger
 
 import me.rerere.rikkahub.workflow.model.TriggerSpec
-import me.rerere.rikkahub.workflow.model.WorkflowDefinition
 
 /**
  * Callback the trigger family fires when its underlying signal arrives. The registry
@@ -38,7 +37,7 @@ interface WorkflowTriggerFamily {
      * subset of currently-enabled workflows whose trigger this family handles.
      * Pass an empty list to fully unregister.
      */
-    suspend fun sync(matching: List<WorkflowDefinition>, callback: TriggerFireCallback)
+    suspend fun sync(matching: List<TriggerBinding>, callback: TriggerFireCallback)
 
     /** Tear down everything (called on app shutdown — best effort). */
     suspend fun shutdown()

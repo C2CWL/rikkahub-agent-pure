@@ -320,6 +320,59 @@ class MissionLauncherTest {
         ConversationSystemAddendum.clear(Uuid.parse(conv))
     }
 
+    // ---------------------------------------------------------------- trigger
+
+    @Test
+    fun `Trigger launch on an ACTIVE mission reuses the conversation and names the trigger`() = runBlocking {
+        val fx = Fixture()
+        val conv = "44444444-4444-4444-4444-444444444444"
+        fx.seed(mission(id = "m-trigger", conversationId = conv))
+
+        val outcome = fx.launcher.launch("m-trigger", LaunchSource.Trigger("Wi-Fi 连接"))
+        assertTrue(outcome.ok)
+        assertEquals("run-1", outcome.runId)
+
+        val request = fx.runService.submitted.single()
+        assertEquals(AgentRunKind.Mission, request.kind)
+        assertEquals("m-trigger", request.missionId)
+        assertEquals(
+            "the existing execution conversation is reused",
+            Uuid.parse(conv),
+            request.conversationId,
+        )
+        assertTrue("the prompt names the trigger", request.prompt.contains("Wi-Fi 连接"))
+        assertTrue("the prompt carries the trigger preamble", request.prompt.contains("[系统]"))
+
+        val handle = fx.runService.handles.single()
+        val row = fx.missionDao.getById("m-trigger")!!
+        assertEquals("a reused conversation is not rewritten", conv, row.conversationId)
+        assertEquals(MissionExecutionState.RUNNING.name, row.executionState)
+        assertEquals(handle.id, row.lastRunId)
+        assertEquals("trigger: Wi-Fi 连接", fx.launchNotes("m-trigger").single().detail)
+
+        MissionSessions.unregister(handle.conversationId.toString())
+        ConversationSystemAddendum.clear(Uuid.parse(conv))
+    }
+
+    @Test
+    fun `Trigger launch on a DONE mission is refused without submitting`() = runBlocking {
+        val fx = Fixture()
+        val conv = "66666666-6666-6666-6666-666666666666"
+        fx.seed(
+            mission(
+                id = "m-trigger-done",
+                conversationId = conv,
+                status = MissionStatus.DONE.name,
+            )
+        )
+
+        val outcome = fx.launcher.launch("m-trigger-done", LaunchSource.Trigger("定时 09:00"))
+        assertFalse(outcome.ok)
+        assertTrue(outcome.error.orEmpty().contains("ACTIVE"))
+        assertTrue("a refused trigger must not submit", fx.runService.submitted.isEmpty())
+        assertEquals(MissionStatus.DONE.name, fx.missionDao.getById("m-trigger-done")!!.status)
+    }
+
     // ---------------------------------------------------------------- sessions registry
 
     @Test

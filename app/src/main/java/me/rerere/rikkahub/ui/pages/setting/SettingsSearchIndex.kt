@@ -114,18 +114,6 @@ fun settingsSearchIndex(developerMode: Boolean): List<SettingsSearchEntry> {
             route = Screen.SettingMcp,
         ),
         SettingsSearchEntry(
-            titleRes = R.string.setting_page_workflows,
-            descriptionRes = R.string.setting_page_workflows_desc,
-            groupRes = R.string.setting_page_group_assistant,
-            route = Screen.SettingWorkflows,
-        ),
-        SettingsSearchEntry(
-            titleRes = R.string.setting_page_scheduled_jobs,
-            descriptionRes = R.string.setting_page_scheduled_jobs_desc,
-            groupRes = R.string.setting_page_group_assistant,
-            route = Screen.SettingScheduledJobs,
-        ),
-        SettingsSearchEntry(
             titleRes = R.string.setting_page_tool_approvals,
             descriptionRes = R.string.setting_page_tool_approvals_desc,
             groupRes = R.string.setting_page_group_assistant,

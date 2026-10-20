@@ -22,7 +22,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.workflow.execution.WorkflowEngine
 import me.rerere.rikkahub.workflow.model.TriggerSpec
-import me.rerere.rikkahub.workflow.model.WorkflowDefinition
 import me.rerere.rikkahub.workflow.repository.WorkflowRepository
 import org.koin.java.KoinJavaComponent
 
@@ -54,7 +53,7 @@ internal class GeofenceTriggerFamily(
     override fun handles(spec: TriggerSpec): Boolean =
         spec is TriggerSpec.GeofenceEnter || spec is TriggerSpec.GeofenceExit
 
-    override suspend fun sync(matching: List<WorkflowDefinition>, callback: TriggerFireCallback) {
+    override suspend fun sync(matching: List<TriggerBinding>, callback: TriggerFireCallback) {
         fireCallback = callback
         GeofenceTriggerDispatcher.bind(this)
 
@@ -268,9 +267,16 @@ object GeofenceTriggerDispatcher {
  * row is gone or Koin isn't ready.
  */
 internal object GeofenceTriggerHelper {
+    /**
+     * 批 B — mission cold-start resolver, installed by the mission trigger engine at app
+     * start. Returns (spec, fire callback) when the id belongs to an armed mission.
+     */
+    @Volatile
+    var missionResolver: (suspend (String) -> Pair<TriggerSpec, TriggerFireCallback>?)? = null
+
     data class Loaded(
         val entity: me.rerere.rikkahub.workflow.db.WorkflowEntity,
-        val definition: WorkflowDefinition,
+        val definition: me.rerere.rikkahub.workflow.model.WorkflowDefinition,
         val fire: TriggerFireCallback,
     )
 
@@ -282,12 +288,19 @@ internal object GeofenceTriggerHelper {
     }.getOrNull()
 
     /**
-     * Load a single workflow by id (== geofence requestId) straight from the repository and
-     * fire it if its stored trigger matches [transition]. Used by the dispatcher's cold-start
-     * path (no bound family). The engine callback re-checks enabled / cooldown / conditions,
-     * but we also gate on the entity's enabled flag and the stored spec direction here.
+     * Load a single owner by id (== geofence requestId) and fire it when its stored trigger
+     * matches [transition]. Missions take precedence (batch B is the live consumer); the
+     * workflow branch keeps the legacy path working while it is retired.
      */
     suspend fun lookupAndFire(workflowId: String, transition: Int) {
+        val mission = runCatching { missionResolver?.invoke(workflowId) }.getOrNull()
+        if (mission != null) {
+            val (spec, fire) = mission
+            val matches = (transition == Geofence.GEOFENCE_TRANSITION_ENTER && spec is TriggerSpec.GeofenceEnter)
+                || (transition == Geofence.GEOFENCE_TRANSITION_EXIT && spec is TriggerSpec.GeofenceExit)
+            if (matches) fire.onFire(workflowId, spec)
+            return
+        }
         val loaded = repositoryLookup(workflowId) ?: return
         if (!loaded.entity.enabled) return
         val spec = loaded.definition.trigger

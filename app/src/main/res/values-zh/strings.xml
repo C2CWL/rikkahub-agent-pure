@@ -3009,4 +3009,32 @@ HARDLINE 保护仍然生效：rm -rf /、mkfs、shutdown / reboot、向块设备
   <string name="mission_launch_failed">任务启动失败</string>
   <string name="mission_select_assistant">选择执行助手</string>
   <string name="mission_select_workspace">选择工作区</string>
+  <string name="mission_start_title">开始方式</string>
+  <string name="mission_start_immediate">立即开始</string>
+  <string name="mission_start_scheduled">定时</string>
+  <string name="mission_start_trigger">触发</string>
+  <string name="mission_start_hour">时</string>
+  <string name="mission_start_minute">分</string>
+  <string name="mission_start_days_hint">不选即为每天</string>
+  <string name="mission_start_day_mon">周一</string>
+  <string name="mission_start_day_tue">周二</string>
+  <string name="mission_start_day_wed">周三</string>
+  <string name="mission_start_day_thu">周四</string>
+  <string name="mission_start_day_fri">周五</string>
+  <string name="mission_start_day_sat">周六</string>
+  <string name="mission_start_day_sun">周日</string>
+  <string name="mission_start_cooldown">冷却秒数</string>
+  <string name="mission_start_max_runs">每日上限（空 = 不限）</string>
+  <string name="mission_trigger_title">开始方式</string>
+  <string name="mission_trigger_wifi_connected">Wi-Fi 连接</string>
+  <string name="mission_trigger_wifi_disconnected">Wi-Fi 断开</string>
+  <string name="mission_trigger_power_connected">充电连接</string>
+  <string name="mission_trigger_power_disconnected">充电断开</string>
+  <string name="mission_trigger_boot_completed">开机完成</string>
+  <string name="mission_trigger_screen_on">屏幕点亮</string>
+  <string name="mission_trigger_screen_off">屏幕熄灭</string>
+  <string name="mission_trigger_time_cron_summary">定时 %1$s（%2$s）</string>
+  <string name="mission_trigger_every_day">每天</string>
+  <string name="mission_trigger_next_run">下次运行：%1$s</string>
+  <string name="mission_trigger_paused">已暂停</string>
 </resources>

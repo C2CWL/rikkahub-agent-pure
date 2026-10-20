@@ -61,8 +61,9 @@ object ImportedDatabaseReconciler {
      * newer *shared* conversation columns were added) or this reconciliation will silently stop
      * matching. `internal` so a JVM test can assert these stay in sync with the schema export.
      */
-    internal const val EXPECTED_VERSION = 35
-    internal const val EXPECTED_IDENTITY_HASH = "9540ddedc97486b95bca16a8aa96d94a"
+    internal const val EXPECTED_VERSION = 36
+    // NOTE: refreshed from the CI-exported schemas/.../36.json identityHash before release.
+    internal const val EXPECTED_IDENTITY_HASH = "ce18ed529006e1cd3feb96db155597e2"
 
     /**
      * Columns that a restored file must already have for its shared schema to be considered
@@ -103,6 +104,21 @@ object ImportedDatabaseReconciler {
     )
 
     /**
+     * v36 (批 B) adds the trigger / schedule columns. Same backup-restore backfill treatment:
+     * a restored v35 file's `missions` table predates them.
+     */
+    private val MISSION_V36_COLUMN_DDL: List<Pair<String, String>> = listOf(
+        "trigger_json" to "ALTER TABLE `missions` ADD COLUMN `trigger_json` TEXT",
+        "trigger_enabled" to "ALTER TABLE `missions` ADD COLUMN `trigger_enabled` INTEGER NOT NULL DEFAULT 1",
+        "cooldown_seconds" to "ALTER TABLE `missions` ADD COLUMN `cooldown_seconds` INTEGER NOT NULL DEFAULT 0",
+        "max_runs_per_day" to "ALTER TABLE `missions` ADD COLUMN `max_runs_per_day` INTEGER",
+        "last_fired_at" to "ALTER TABLE `missions` ADD COLUMN `last_fired_at` INTEGER",
+        "fires_today" to "ALTER TABLE `missions` ADD COLUMN `fires_today` INTEGER NOT NULL DEFAULT 0",
+        "fires_day" to "ALTER TABLE `missions` ADD COLUMN `fires_day` TEXT",
+        "next_run_at" to "ALTER TABLE `missions` ADD COLUMN `next_run_at` INTEGER",
+    )
+
+    /**
      * Fork-only tables absent from an upstream backup, with their exact v25 create + index
      * statements. Every statement is IF NOT EXISTS so running it against a genuine agent
      * backup (where the tables already exist) is a no-op.
@@ -123,7 +139,7 @@ object ImportedDatabaseReconciler {
         // v32 workbench tables (create statement refreshed to the v35 column set — a restored
         // pre-v35 file that already has the table is covered by the ALTER backfill below; a
         // file with no missions table at all gets the full current shape here).
-        "CREATE TABLE IF NOT EXISTS `missions` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `description` TEXT NOT NULL, `status` TEXT NOT NULL, `acceptance_json` TEXT NOT NULL, `acceptance_checked_json` TEXT NOT NULL, `conversation_id` TEXT, `assistant_id` TEXT, `artifact_count` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, `completed_at` INTEGER, `workspace_id` TEXT, `approval_mode` TEXT, `limits_json` TEXT, `resume_count` INTEGER NOT NULL DEFAULT 0, `last_run_id` TEXT, `execution_state` TEXT NOT NULL DEFAULT 'idle', PRIMARY KEY(`id`))",
+        "CREATE TABLE IF NOT EXISTS `missions` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `description` TEXT NOT NULL, `status` TEXT NOT NULL, `acceptance_json` TEXT NOT NULL, `acceptance_checked_json` TEXT NOT NULL, `conversation_id` TEXT, `assistant_id` TEXT, `artifact_count` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, `completed_at` INTEGER, `workspace_id` TEXT, `approval_mode` TEXT, `limits_json` TEXT, `resume_count` INTEGER NOT NULL DEFAULT 0, `last_run_id` TEXT, `execution_state` TEXT NOT NULL DEFAULT 'idle', `trigger_json` TEXT, `trigger_enabled` INTEGER NOT NULL DEFAULT 1, `cooldown_seconds` INTEGER NOT NULL DEFAULT 0, `max_runs_per_day` INTEGER, `last_fired_at` INTEGER, `fires_today` INTEGER NOT NULL DEFAULT 0, `fires_day` TEXT, `next_run_at` INTEGER, PRIMARY KEY(`id`))",
         "CREATE INDEX IF NOT EXISTS `index_missions_status` ON `missions` (`status`)",
         "CREATE INDEX IF NOT EXISTS `index_missions_conversation_id` ON `missions` (`conversation_id`)",
         "CREATE INDEX IF NOT EXISTS `index_missions_updated_at` ON `missions` (`updated_at`)",
@@ -233,6 +249,12 @@ object ImportedDatabaseReconciler {
                         // all, FORK_ONLY_DDL above already created it with the full v35 shape.)
                         if (tableExists(db, "missions")) {
                             MISSION_V35_COLUMN_DDL.forEach { (column, ddl) ->
+                                if (!hasColumn(db, "missions", column)) {
+                                    db.execSQL(ddl)
+                                }
+                            }
+                            // v36 — trigger / schedule columns (批 B).
+                            MISSION_V36_COLUMN_DDL.forEach { (column, ddl) ->
                                 if (!hasColumn(db, "missions", column)) {
                                     db.execSQL(ddl)
                                 }

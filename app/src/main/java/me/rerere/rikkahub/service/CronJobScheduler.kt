@@ -27,6 +27,8 @@ class CronJobScheduler(
     private val wm get() = WorkManager.getInstance(context)
 
     suspend fun schedule(job: ScheduledJobEntity) {
+        // 批 B — 定时任务退役：不再 enqueue 任何新 work（已排队的由 CronJobWorker 自身守卫终结）。
+        if (!LegacyAutomation.ENABLED) return
         val nowMs = System.currentTimeMillis()
         val nextRun = nextRunMs(job, nowMs)
         if (nextRun == null) {
@@ -49,6 +51,8 @@ class CronJobScheduler(
      * fires are bonus — they don't disturb the regular schedule's accounting.
      */
     suspend fun triggerNow(jobId: String) {
+        // 批 B — 定时任务退役：手动触发同样失效。
+        if (!LegacyAutomation.ENABLED) return
         val req = OneTimeWorkRequestBuilder<CronJobWorker>()
             .setInitialDelay(0L, TimeUnit.MILLISECONDS)
             .setInputData(Data.Builder()
@@ -64,6 +68,8 @@ class CronJobScheduler(
     }
 
     suspend fun scheduleAllEnabled() {
+        // 批 B — 定时任务退役：开机恢复也不再重排（旧 job 停在原地，不产生新 run）。
+        if (!LegacyAutomation.ENABLED) return
         repo.getEnabled().forEach { schedule(it) }
     }
 

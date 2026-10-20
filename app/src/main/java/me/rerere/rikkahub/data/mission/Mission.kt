@@ -112,6 +112,38 @@ data class MissionEntity(
     /** Execution posture, stored as [MissionExecutionState]'s name. Default "idle". */
     @ColumnInfo("execution_state", defaultValue = "idle")
     val executionState: String = "idle",
+    // -------------------------------------------------------------------------------------
+    // 批 B（开始方式，v36）— trigger / schedule columns
+    // -------------------------------------------------------------------------------------
+    /**
+     * Start mode: serialized [me.rerere.rikkahub.workflow.model.TriggerSpec] JSON. `null` means
+     * the mission only ever runs when the user presses "start" (the wish-style immediate path).
+     * A non-null value makes the mission **recurring**: every fire of the trigger starts a new
+     * execution round, and a `mission_report(done)` ends the occurrence rather than the mission.
+     */
+    @ColumnInfo("trigger_json")
+    val triggerJson: String? = null,
+    /** Whether the trigger is armed. Paused missions stay ACTIVE but are not scheduled. */
+    @ColumnInfo("trigger_enabled", defaultValue = "1")
+    val triggerEnabled: Boolean = true,
+    /** Minimum gap between two trigger fires, seconds. 0 = no cooldown. */
+    @ColumnInfo("cooldown_seconds", defaultValue = "0")
+    val cooldownSeconds: Int = 0,
+    /** Max fires per local day. `null` = unlimited. */
+    @ColumnInfo("max_runs_per_day")
+    val maxRunsPerDay: Int? = null,
+    /** Wall-clock of the last accepted trigger fire. */
+    @ColumnInfo("last_fired_at")
+    val lastFiredAt: Long? = null,
+    /** Fires already consumed on [firesDay]. */
+    @ColumnInfo("fires_today", defaultValue = "0")
+    val firesToday: Int = 0,
+    /** Local calendar day (`yyyy-MM-dd`) that [firesToday] belongs to. */
+    @ColumnInfo("fires_day")
+    val firesDay: String? = null,
+    /** Next expected fire for time-based triggers (display only; WorkManager owns the real one). */
+    @ColumnInfo("next_run_at")
+    val nextRunAt: Long? = null,
 )
 
 // ---------------------------------------------------------------------------
@@ -164,3 +196,34 @@ val MissionEntity.limits: MissionLimits
 val MissionEntity.executionStateEnum: MissionExecutionState
     get() = MissionExecutionState.entries.firstOrNull { it.name == executionState }
         ?: MissionExecutionState.IDLE
+
+// ---------------------------------------------------------------------------
+// 批 B — start-mode (trigger) helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Decode [MissionEntity.triggerJson] into a [TriggerSpec]. `null` for the immediate start mode,
+ * for blank/malformed JSON, or for a trigger type this build no longer knows.
+ */
+val MissionEntity.triggerSpec: me.rerere.rikkahub.workflow.model.TriggerSpec?
+    get() = runCatching {
+        triggerJson?.takeIf { it.isNotBlank() }
+            ?.let { JsonInstant.decodeFromString<me.rerere.rikkahub.workflow.model.TriggerSpec>(it) }
+    }.getOrNull()
+
+/**
+ * True when this mission is driven by a trigger (time / event) and therefore recurs: every fire
+ * starts a new round, and a done signal ends the occurrence rather than the whole mission.
+ *
+ * `Manual` triggers count as non-recurring — a manual-trigger mission is just the immediate mode
+ * with an explicit label.
+ */
+val MissionEntity.isRecurring: Boolean
+    get() = triggerSpec.let { it != null && it !is me.rerere.rikkahub.workflow.model.TriggerSpec.Manual }
+
+/** True when this mission should be registered with the trigger engine right now. */
+val MissionEntity.isTriggerArmed: Boolean
+    get() = triggerEnabled &&
+        statusEnum == MissionStatus.ACTIVE &&
+        triggerSpec != null &&
+        triggerSpec !is me.rerere.rikkahub.workflow.model.TriggerSpec.Manual

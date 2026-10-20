@@ -523,6 +523,12 @@ private fun LocalToolContent(
         // A gated group that is switched off is not in the tool table, so it has nothing to pin —
         // it disappears from this list rather than offering a switch that would only ever be inert.
         val residentGroups = LocalToolGroups.all.filter { option ->
+            // 批 B — retired automation: the option rows would only toggle inert groups.
+            if (!me.rerere.rikkahub.service.LegacyAutomation.ENABLED &&
+                (option == LocalToolOption.CronJobs || option == LocalToolOption.Workflows)
+            ) {
+                return@filter false
+            }
             val inTable = !LocalToolGates.isGated(option) || option in enabledGroups
             if (!inTable) return@filter false
             if (trimmedQuery.isEmpty()) return@filter true

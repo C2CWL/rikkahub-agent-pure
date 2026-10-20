@@ -17,6 +17,7 @@ import me.rerere.rikkahub.data.ai.tools.HeadlessToolApprovalPolicy
 import me.rerere.rikkahub.runtime.tools.HardlineCommandGuard
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.service.LegacyAutomation
 import me.rerere.rikkahub.workflow.condition.ConditionEvaluator
 import me.rerere.rikkahub.workflow.condition.ContextProvider
 import me.rerere.rikkahub.workflow.model.WorkflowAction
@@ -124,9 +125,16 @@ class WorkflowEngine(
      * sequence. Returns the resulting status — useful for `workflow_run` synchronous tool
      * call, ignored by the trigger callback path.
      */
-    suspend fun fire(workflowId: String): FireOutcome = withContext(Dispatchers.IO) {
-        val lock = lockFor(workflowId)
-        lock.withLock { fireLocked(workflowId) }
+    suspend fun fire(workflowId: String): FireOutcome {
+        // 批 B — 工作流退役：所有 fire 入口（触发器回调、workflow_run 工具）在此终止。
+        // 不读 workflow、不写 run / ledger 行，返回与「workflow 已禁用」等价的 SKIPPED_DISABLED。
+        if (!LegacyAutomation.ENABLED) {
+            return FireOutcome(WorkflowRunStatus.SKIPPED_DISABLED, "automation_retired", "")
+        }
+        return withContext(Dispatchers.IO) {
+            val lock = lockFor(workflowId)
+            lock.withLock { fireLocked(workflowId) }
+        }
     }
 
     private suspend fun fireLocked(workflowId: String): FireOutcome {

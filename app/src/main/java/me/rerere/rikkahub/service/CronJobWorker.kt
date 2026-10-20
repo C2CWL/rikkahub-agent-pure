@@ -162,6 +162,9 @@ class CronJobWorker(
     private val agentRunRepo: AgentRunRepository by inject()
 
     override suspend fun doWork(): Result {
+        // 批 B — 定时任务退役：升级前已排队 / 被系统重放的旧 work 在此静默结束，
+        // 不读 job、不写 run 行、不再重排自身。
+        if (!LegacyAutomation.ENABLED) return Result.success()
         val jobId = inputData.getString(KEY_JOB_ID) ?: return Result.failure()
         val isManual = inputData.getBoolean(KEY_MANUAL, false)
 

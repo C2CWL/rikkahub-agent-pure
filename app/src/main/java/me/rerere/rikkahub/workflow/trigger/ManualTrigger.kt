@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.workflow.trigger
 
 import me.rerere.rikkahub.workflow.model.TriggerSpec
-import me.rerere.rikkahub.workflow.model.WorkflowDefinition
 
 /**
  * Phase 12 — manual trigger. No receiver, no schedule. Fires only via `workflow_run` tool
@@ -14,6 +13,6 @@ import me.rerere.rikkahub.workflow.model.WorkflowDefinition
 internal class ManualTriggerFamily : WorkflowTriggerFamily {
     override val name = "manual"
     override fun handles(spec: TriggerSpec): Boolean = spec is TriggerSpec.Manual
-    override suspend fun sync(matching: List<WorkflowDefinition>, callback: TriggerFireCallback) = Unit
+    override suspend fun sync(matching: List<TriggerBinding>, callback: TriggerFireCallback) = Unit
     override suspend fun shutdown() = Unit
 }

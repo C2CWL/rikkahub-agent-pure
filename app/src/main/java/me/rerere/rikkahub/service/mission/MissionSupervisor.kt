@@ -12,6 +12,7 @@ import me.rerere.rikkahub.data.mission.MissionEntity
 import me.rerere.rikkahub.data.mission.MissionExecutionState
 import me.rerere.rikkahub.data.mission.MissionRepository
 import me.rerere.rikkahub.data.mission.MissionStatus
+import me.rerere.rikkahub.data.mission.isRecurring
 import me.rerere.rikkahub.data.mission.limits
 import me.rerere.rikkahub.data.mission.statusEnum
 import me.rerere.rikkahub.data.mission.toArtifact
@@ -283,9 +284,26 @@ class MissionSupervisor(
 
     /** Done signal: mission → DONE, notify the delivery summary (payload `note`, or a generic line). */
     private suspend fun complete(mission: MissionEntity, events: List<RunEventEntity>) {
+        val summary = doneNote(events) ?: "目标已达成"
+
+        // 批 B — a trigger-driven mission recurs. A done signal ends THIS occurrence, not the
+        // mission: park it back to IDLE (resume budget reset) and keep it ACTIVE so the next
+        // fire can launch a fresh round. The user archives it when they no longer want it.
+        if (mission.isRecurring) {
+            missionRepository.updateExecutionState(mission.id, MissionExecutionState.IDLE)
+            missionRepository.resetResumeCount(mission.id)
+            missionRepository.logEvent(
+                missionId = mission.id,
+                type = RunEventType.NOTE,
+                title = "occurrence_done",
+                detail = summary,
+            )
+            notify("任务本轮完成：${mission.title}", summary)
+            return
+        }
+
         missionRepository.transition(mission.id, MissionStatus.DONE, note = "mission_report(done)")
         missionRepository.updateExecutionState(mission.id, MissionExecutionState.IDLE)
-        val summary = doneNote(events) ?: "目标已达成"
         notify("任务完成：${mission.title}", summary)
     }
 

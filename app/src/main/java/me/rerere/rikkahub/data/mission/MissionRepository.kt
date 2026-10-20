@@ -9,6 +9,8 @@ import me.rerere.rikkahub.data.runevent.RunEventEntity
 import me.rerere.rikkahub.data.runevent.RunEventRepository
 import me.rerere.rikkahub.data.runevent.RunEventType
 import me.rerere.rikkahub.runtime.util.JsonInstant
+import me.rerere.rikkahub.service.mission.MissionTriggerGate
+import me.rerere.rikkahub.service.mission.TriggerFireGate
 import kotlin.uuid.Uuid
 
 /**
@@ -56,6 +58,9 @@ class MissionRepository(
         acceptance: List<String> = emptyList(),
         conversationId: String? = null,
         assistantId: String? = null,
+        triggerJson: String? = null,
+        cooldownSeconds: Int = 0,
+        maxRunsPerDay: Int? = null,
     ): MissionEntity {
         val id = Uuid.random().toString()
         val now = System.currentTimeMillis()
@@ -72,6 +77,9 @@ class MissionRepository(
             createdAt = now,
             updatedAt = now,
             completedAt = null,
+            triggerJson = triggerJson,
+            cooldownSeconds = cooldownSeconds.coerceAtLeast(0),
+            maxRunsPerDay = maxRunsPerDay?.coerceAtLeast(1),
         )
         writeMutex.withLock {
             dao.upsert(entity)
@@ -263,6 +271,111 @@ class MissionRepository(
                 )
             )
         }
+    }
+
+    /**
+     * 批 B — replace the mission's start mode (trigger spec + its guard rails). Passing a
+     * null [triggerJson] converts the mission back to immediate-only. [enabled] controls
+     * whether the scheduler keeps it armed.
+     */
+    suspend fun updateTrigger(
+        id: String,
+        triggerJson: String?,
+        cooldownSeconds: Int = 0,
+        maxRunsPerDay: Int? = null,
+        enabled: Boolean = true,
+    ) {
+        writeMutex.withLock {
+            val existing = dao.getById(id) ?: return@withLock
+            dao.upsert(
+                existing.copy(
+                    triggerJson = triggerJson,
+                    cooldownSeconds = cooldownSeconds.coerceAtLeast(0),
+                    maxRunsPerDay = maxRunsPerDay?.coerceAtLeast(1),
+                    triggerEnabled = enabled,
+                    // A new schedule invalidates the old counters; start clean.
+                    lastFiredAt = null,
+                    firesToday = 0,
+                    firesDay = null,
+                    nextRunAt = null,
+                    updatedAt = System.currentTimeMillis(),
+                )
+            )
+        }
+    }
+
+    /** Arm / pause the trigger without touching its spec or counters. */
+    suspend fun setTriggerEnabled(id: String, enabled: Boolean) {
+        writeMutex.withLock {
+            val existing = dao.getById(id) ?: return@withLock
+            if (existing.triggerEnabled == enabled) return@withLock
+            dao.upsert(
+                existing.copy(
+                    triggerEnabled = enabled,
+                    updatedAt = System.currentTimeMillis(),
+                )
+            )
+        }
+    }
+
+    /** Store the next expected fire for time-based triggers (best-effort display value). */
+    suspend fun updateNextRunAt(id: String, nextRunAtMs: Long?) {
+        writeMutex.withLock {
+            val existing = dao.getById(id) ?: return@withLock
+            if (existing.nextRunAt == nextRunAtMs) return@withLock
+            dao.upsert(existing.copy(nextRunAt = nextRunAtMs))
+        }
+    }
+
+    /**
+     * 批 B — the single atomic gate every trigger fire goes through.
+     *
+     * Under [writeMutex] the current row is re-read and checked in this order: mission exists
+     * and is ACTIVE → trigger armed → not already running / waiting for approval → daily cap →
+     * cooldown. Only when everything passes are the counters written (`lastFiredAt`,
+     * `firesToday`, `firesDay`) and the auto-continue budget reset for the new occurrence.
+     *
+     * The gate lives here (not only in the scheduler) because two trigger families can fire
+     * concurrently: the mutex makes "check + consume" one step, so a burst cannot exceed the
+     * daily cap or slip two runs past the cooldown.
+     *
+     * [day] is the local calendar day (`yyyy-MM-dd`) the caller computed; a counter from a
+     * different day is treated as zero.
+     */
+    suspend fun consumeTriggerFire(id: String, nowMs: Long, day: String): TriggerFireGate {
+        var gate: TriggerFireGate = TriggerFireGate.SKIPPED_NOT_ACTIVE
+        writeMutex.withLock {
+            val existing = dao.getById(id) ?: return@withLock
+            val spec = existing.triggerSpec
+            val sameDay = existing.firesDay == day
+            val firesToday = if (sameDay) existing.firesToday else 0
+
+            gate = MissionTriggerGate.evaluate(
+                MissionTriggerGate.Input(
+                    status = existing.status,
+                    triggerArmed = existing.triggerEnabled && spec != null,
+                    executionState = existing.executionState,
+                    lastFiredAt = existing.lastFiredAt,
+                    firesToday = firesToday,
+                    maxRunsPerDay = existing.maxRunsPerDay,
+                    cooldownSeconds = existing.cooldownSeconds,
+                    nowMs = nowMs,
+                )
+            )
+            if (gate != TriggerFireGate.FIRED) return@withLock
+
+            dao.upsert(
+                existing.copy(
+                    lastFiredAt = nowMs,
+                    firesToday = firesToday + 1,
+                    firesDay = day,
+                    // A new occurrence gets a fresh auto-continue budget.
+                    resumeCount = 0,
+                    updatedAt = nowMs,
+                )
+            )
+        }
+        return gate
     }
 
     /**

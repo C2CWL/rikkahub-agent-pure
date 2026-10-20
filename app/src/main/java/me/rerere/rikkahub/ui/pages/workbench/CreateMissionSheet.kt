@@ -40,6 +40,44 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.ui.components.ai.WorkspaceSelectSheet
 import me.rerere.rikkahub.ui.components.ui.AssistantAvatar
+import me.rerere.rikkahub.workflow.model.TriggerSpec
+
+/** 批 B — how a mission starts: immediately on create, on a daily schedule, or on an event trigger. */
+enum class MissionStartMode { IMMEDIATE, SCHEDULED, TRIGGER }
+
+/** Event-trigger options offered by the create sheet (label resolved via stringResource). */
+private val triggerOptions = listOf(
+    "wifi_connected" to R.string.mission_trigger_wifi_connected,
+    "wifi_disconnected" to R.string.mission_trigger_wifi_disconnected,
+    "power_connected" to R.string.mission_trigger_power_connected,
+    "power_disconnected" to R.string.mission_trigger_power_disconnected,
+    "boot_completed" to R.string.mission_trigger_boot_completed,
+    "screen_on" to R.string.mission_trigger_screen_on,
+    "screen_off" to R.string.mission_trigger_screen_off,
+)
+
+/** Map a create-sheet trigger option key to its [TriggerSpec]; null for unknown keys. */
+private fun buildTriggerSpec(kind: String?): TriggerSpec? = when (kind) {
+    "wifi_connected" -> TriggerSpec.WifiConnected()
+    "wifi_disconnected" -> TriggerSpec.WifiDisconnected()
+    "power_connected" -> TriggerSpec.PowerConnected
+    "power_disconnected" -> TriggerSpec.PowerDisconnected
+    "boot_completed" -> TriggerSpec.BootCompleted
+    "screen_on" -> TriggerSpec.ScreenOn
+    "screen_off" -> TriggerSpec.ScreenOff
+    else -> null
+}
+
+/** Day-of-week chip label (ISO 1..7, 1 = Monday). */
+private fun dayLabelRes(day: Int): Int = when (day) {
+    1 -> R.string.mission_start_day_mon
+    2 -> R.string.mission_start_day_tue
+    3 -> R.string.mission_start_day_wed
+    4 -> R.string.mission_start_day_thu
+    5 -> R.string.mission_start_day_fri
+    6 -> R.string.mission_start_day_sat
+    else -> R.string.mission_start_day_sun
+}
 
 /** Everything the create sheet collects; nulls mean "fall back to defaults / not bound". */
 data class MissionDraft(
@@ -52,6 +90,11 @@ data class MissionDraft(
     val maxResumeRounds: Int?,     // 高级；null = 均衡默认
     val stallRounds: Int?,
     val tokenBudget: Long?,
+    // 批 B — 开始方式；trigger == null = 立即开始
+    val startMode: MissionStartMode = MissionStartMode.IMMEDIATE,
+    val trigger: TriggerSpec? = null,
+    val cooldownSeconds: Int = 60,
+    val maxRunsPerDay: Int? = 24,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,6 +118,21 @@ fun CreateMissionSheet(
     var tokenBudget by remember { mutableStateOf("") }
     var showAssistantSheet by remember { mutableStateOf(false) }
     var showWorkspaceSheet by remember { mutableStateOf(false) }
+    // 批 B — 开始方式
+    var startMode by remember { mutableStateOf(MissionStartMode.IMMEDIATE) }
+    var scheduleHour by remember { mutableStateOf("") }
+    var scheduleMinute by remember { mutableStateOf("") }
+    val scheduleDays = remember { mutableStateListOf<Int>() } // ISO 1..7；空 = 每天
+    var triggerKind by remember { mutableStateOf<String?>(null) }
+    var cooldownText by remember { mutableStateOf("60") }
+    var maxRunsText by remember { mutableStateOf("24") }
+
+    val scheduleHourValid = scheduleHour.toIntOrNull()?.let { it in 0..23 } == true
+    val scheduleMinuteValid = scheduleMinute.toIntOrNull()?.let { it in 0..59 } == true
+    val scheduleTimeValid = scheduleHourValid && scheduleMinuteValid
+    val createEnabled = title.isNotBlank() &&
+        (startMode != MissionStartMode.SCHEDULED || scheduleTimeValid) &&
+        (startMode != MissionStartMode.TRIGGER || triggerKind != null)
 
     val selectedAssistant = settings.assistants.firstOrNull { it.id.toString() == assistantId }
     val workspaceSheetAssistant = selectedAssistant ?: settings.assistants.firstOrNull()
@@ -181,6 +239,127 @@ fun CreateMissionSheet(
                 )
             }
 
+            // 开始方式（批 B）
+            Text(
+                text = stringResource(R.string.mission_start_title),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                val modes = listOf(
+                    MissionStartMode.IMMEDIATE to R.string.mission_start_immediate,
+                    MissionStartMode.SCHEDULED to R.string.mission_start_scheduled,
+                    MissionStartMode.TRIGGER to R.string.mission_start_trigger,
+                )
+                modes.forEach { (mode, labelRes) ->
+                    FilterChip(
+                        selected = startMode == mode,
+                        onClick = { startMode = mode },
+                        label = { Text(text = stringResource(labelRes)) },
+                    )
+                }
+            }
+
+            // 定时：HH:mm + 周一..周日（空 = 每天）
+            if (startMode == MissionStartMode.SCHEDULED) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = scheduleHour,
+                        onValueChange = { scheduleHour = it.filter(Char::isDigit).take(2) },
+                        label = { Text(text = stringResource(R.string.mission_start_hour)) },
+                        isError = scheduleHour.isNotEmpty() && !scheduleHourValid,
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                    Text(
+                        text = ":",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    OutlinedTextField(
+                        value = scheduleMinute,
+                        onValueChange = { scheduleMinute = it.filter(Char::isDigit).take(2) },
+                        label = { Text(text = stringResource(R.string.mission_start_minute)) },
+                        isError = scheduleMinute.isNotEmpty() && !scheduleMinuteValid,
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    (1..7).forEach { day ->
+                        FilterChip(
+                            selected = day in scheduleDays,
+                            onClick = {
+                                if (day in scheduleDays) scheduleDays.remove(day) else scheduleDays.add(day)
+                            },
+                            label = { Text(text = stringResource(dayLabelRes(day))) },
+                        )
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.mission_start_days_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            // 触发：事件类型
+            if (startMode == MissionStartMode.TRIGGER) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    triggerOptions.forEach { (key, labelRes) ->
+                        FilterChip(
+                            selected = triggerKind == key,
+                            onClick = { triggerKind = key },
+                            label = { Text(text = stringResource(labelRes)) },
+                        )
+                    }
+                }
+            }
+
+            // 非立即模式：冷却秒数 + 每日上限
+            if (startMode != MissionStartMode.IMMEDIATE) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = cooldownText,
+                        onValueChange = { cooldownText = it.filter(Char::isDigit) },
+                        label = { Text(text = stringResource(R.string.mission_start_cooldown)) },
+                        placeholder = { Text(text = "60") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                    OutlinedTextField(
+                        value = maxRunsText,
+                        onValueChange = { maxRunsText = it.filter(Char::isDigit) },
+                        label = { Text(text = stringResource(R.string.mission_start_max_runs)) },
+                        placeholder = { Text(text = "24") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                }
+            }
+
             // 审批模式
             Text(
                 text = stringResource(R.string.mission_create_approval_mode),
@@ -248,6 +427,17 @@ fun CreateMissionSheet(
 
             Button(
                 onClick = {
+                    val trigger: TriggerSpec? = when (startMode) {
+                        MissionStartMode.IMMEDIATE -> null
+                        MissionStartMode.SCHEDULED -> TriggerSpec.TimeCron(
+                            timeOfDay = "%02d:%02d".format(
+                                scheduleHour.toIntOrNull() ?: 0,
+                                scheduleMinute.toIntOrNull() ?: 0,
+                            ),
+                            daysOfWeek = scheduleDays.sorted(),
+                        )
+                        MissionStartMode.TRIGGER -> buildTriggerSpec(triggerKind)
+                    }
                     onCreate(
                         MissionDraft(
                             title = title.trim(),
@@ -259,11 +449,15 @@ fun CreateMissionSheet(
                             maxResumeRounds = maxResumeRounds.toIntOrNull(),
                             stallRounds = stallRounds.toIntOrNull(),
                             tokenBudget = tokenBudget.toLongOrNull(),
+                            startMode = startMode,
+                            trigger = trigger,
+                            cooldownSeconds = cooldownText.toIntOrNull() ?: 60,
+                            maxRunsPerDay = maxRunsText.toIntOrNull(),
                         )
                     )
                     onDismiss()
                 },
-                enabled = title.isNotBlank(),
+                enabled = createEnabled,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(text = stringResource(R.string.mission_create_confirm))

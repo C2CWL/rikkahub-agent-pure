@@ -8,16 +8,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
 import me.rerere.rikkahub.data.mission.MissionEntity
 import me.rerere.rikkahub.data.mission.MissionLimits
 import me.rerere.rikkahub.data.mission.MissionRepository
 import me.rerere.rikkahub.data.mission.MissionStatus
 import me.rerere.rikkahub.data.mission.statusEnum
+import me.rerere.rikkahub.data.runevent.RunEventType
+import me.rerere.rikkahub.runtime.util.JsonInstant
 import me.rerere.rikkahub.service.mission.LaunchSource
 import me.rerere.rikkahub.service.mission.MissionLauncher
 import me.rerere.rikkahub.subagent.SubAgentRegistry
 import me.rerere.rikkahub.subagent.SubAgentRun
 import me.rerere.rikkahub.subagent.SubAgentStatus
+import me.rerere.rikkahub.workflow.model.TriggerSpec
 import java.util.Calendar
 
 class WorkbenchVM(
@@ -77,11 +81,18 @@ class WorkbenchVM(
 
     fun createMission(draft: MissionDraft) {
         viewModelScope.launch {
+            // 批 B — trigger start mode: serialize the spec; null = the immediate wish-style path.
+            val triggerJson = draft.trigger?.let { spec ->
+                runCatching { JsonInstant.encodeToString<TriggerSpec>(spec) }.getOrNull()
+            }
             val mission = missionRepository.create(
                 title = draft.title,
                 description = draft.description,
                 acceptance = draft.goals,
                 conversationId = null,
+                triggerJson = triggerJson,
+                cooldownSeconds = if (triggerJson != null) draft.cooldownSeconds else 0,
+                maxRunsPerDay = if (triggerJson != null) draft.maxRunsPerDay else null,
             )
             missionRepository.updateWorkspaceAndAssistant(mission.id, draft.workspaceId, draft.assistantId)
             draft.approvalMode?.let { missionRepository.updateApprovalMode(mission.id, it) }
@@ -95,9 +106,21 @@ class WorkbenchVM(
                     )
                 )
             }
-            val outcome = missionLauncher.launch(mission.id, LaunchSource.Create)
-            if (!outcome.ok) {
-                launchError.value = outcome.error
+            if (triggerJson == null) {
+                val outcome = missionLauncher.launch(mission.id, LaunchSource.Create)
+                if (!outcome.ok) {
+                    launchError.value = outcome.error
+                }
+            } else {
+                // Trigger-driven: MissionScheduler picks the mission up; do not launch now.
+                runCatching {
+                    missionRepository.logEvent(
+                        mission.id,
+                        RunEventType.NOTE,
+                        title = "trigger_armed",
+                        detail = draft.trigger?.let { it::class.simpleName },
+                    )
+                }
             }
         }
     }

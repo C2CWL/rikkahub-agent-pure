@@ -35,8 +35,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Rocket01
-import me.rerere.hugeicons.stroke.LeftToRightListBullet
-import me.rerere.hugeicons.stroke.Clock02
 import me.rerere.hugeicons.stroke.ChartColumn
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.rikkahub.R
@@ -245,16 +243,6 @@ fun WorkbenchDrawerContent(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 title = { Text(text = stringResource(R.string.workbench_quick_title)) },
             ) {
-                item(
-                    onClick = { navController.navigate(Screen.SettingWorkflows) },
-                    leadingContent = { Icon(HugeIcons.LeftToRightListBullet, contentDescription = null) },
-                    headlineContent = { Text(text = stringResource(R.string.workbench_quick_workflows)) },
-                )
-                item(
-                    onClick = { navController.navigate(Screen.SettingScheduledJobs) },
-                    leadingContent = { Icon(HugeIcons.Clock02, contentDescription = null) },
-                    headlineContent = { Text(text = stringResource(R.string.workbench_quick_scheduled_jobs)) },
-                )
                 item(
                     onClick = { navController.navigate(Screen.Stats) },
                     leadingContent = { Icon(HugeIcons.ChartColumn, contentDescription = null) },

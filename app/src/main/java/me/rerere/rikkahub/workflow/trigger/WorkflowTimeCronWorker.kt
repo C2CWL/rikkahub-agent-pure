@@ -24,7 +24,10 @@ class WorkflowTimeCronWorker(
 
     override suspend fun doWork(): Result {
         val workflowId = inputData.getString(TimeCronTriggerFamily.KEY_WORKFLOW_ID) ?: return Result.failure()
-        registry.fireFromTimeCronWorker(workflowId)
+        // 批 B — the id may now belong to a mission; both registries are asked, each no-ops
+        // for ids it does not own. The workflow registry is retired but kept compiling.
+        runCatching { registry.fireFromTimeCronWorker(workflowId) }
+        runCatching { me.rerere.rikkahub.service.mission.MissionTriggerDispatcher.onTimeCronFired(workflowId) }
         return Result.success()
     }
 }

@@ -402,6 +402,43 @@ val dataSourceModule = module {
             appScope = get<AppScope>(),
         )
     }
+    // 批 B — mission scheduler (开始方式：定时 / 触发). Owns the single instance of the
+    // reused trigger families; observes armed missions, gates every fire and launches a
+    // round through MissionLauncher. Started from RikkaHubApp.
+    single {
+        val appContext = get<Context>()
+        me.rerere.rikkahub.service.mission.MissionScheduler(
+            context = appContext,
+            appScope = get<AppScope>(),
+            missionRepository = get(),
+            launcher = get(),
+            runEventRepository = get(),
+            notify = { title, content ->
+                runCatching {
+                    val nm = appContext.getSystemService(android.app.NotificationManager::class.java)
+                    if (nm.getNotificationChannel("rikkahub_missions") == null) {
+                        nm.createNotificationChannel(
+                            android.app.NotificationChannel(
+                                "rikkahub_missions",
+                                "任务",
+                                android.app.NotificationManager.IMPORTANCE_DEFAULT,
+                            )
+                        )
+                    }
+                    me.rerere.rikkahub.utils.NotificationUtil.notify(
+                        context = appContext,
+                        channelId = "rikkahub_missions",
+                        notificationId = title.hashCode(),
+                    ) {
+                        this.title = title
+                        this.content = content
+                        useBigTextStyle = true
+                        autoCancel = true
+                    }
+                }
+            },
+        )
+    }
     // P3 — RunService: the surface-facing run contract. This ChatService-backed facade is
     // the P3 implementation; P4 swaps in a conversation-free runtime without call sites
     // noticing. Cron submits through this; Telegram follows when the streaming surface lands.

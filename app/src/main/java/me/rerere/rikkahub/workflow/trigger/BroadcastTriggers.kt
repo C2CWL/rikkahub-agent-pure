@@ -12,7 +12,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.workflow.model.TriggerSpec
-import me.rerere.rikkahub.workflow.model.WorkflowDefinition
 
 /**
  * Phase 12 — six trigger families that all share the same shape: register a runtime
@@ -29,12 +28,12 @@ internal abstract class BaseBroadcastTriggerFamily(
 ) : WorkflowTriggerFamily {
 
     @Volatile private var receiver: BroadcastReceiver? = null
-    @Volatile private var matchingSnapshot: List<WorkflowDefinition> = emptyList()
+    @Volatile private var matchingSnapshot: List<TriggerBinding> = emptyList()
 
     abstract val intentFilter: IntentFilter
-    abstract fun matchEvent(intent: Intent, workflows: List<WorkflowDefinition>): List<Pair<String, TriggerSpec>>
+    abstract fun matchEvent(intent: Intent, workflows: List<TriggerBinding>): List<Pair<String, TriggerSpec>>
 
-    override suspend fun sync(matching: List<WorkflowDefinition>, callback: TriggerFireCallback) {
+    override suspend fun sync(matching: List<TriggerBinding>, callback: TriggerFireCallback) {
         matchingSnapshot = matching
         if (matching.isEmpty()) {
             unregisterReceiver()
@@ -107,7 +106,7 @@ internal class WifiTriggerFamily(context: Context, scope: CoroutineScope)
     @Volatile private var lastConnectedSsid: String? = null
 
     @Suppress("DEPRECATION") // NetworkInfo + connectionInfo are the only path that gives SSID here.
-    override fun matchEvent(intent: Intent, workflows: List<WorkflowDefinition>): List<Pair<String, TriggerSpec>> {
+    override fun matchEvent(intent: Intent, workflows: List<TriggerBinding>): List<Pair<String, TriggerSpec>> {
         val networkInfo = intent.getParcelableExtra<android.net.NetworkInfo>(WifiManager.EXTRA_NETWORK_INFO)
         val isConnected = networkInfo?.isConnected == true
         val ssid = if (isConnected) currentSsid() else null
@@ -160,7 +159,7 @@ internal class BluetoothTriggerFamily(context: Context, scope: CoroutineScope)
     override fun handles(spec: TriggerSpec): Boolean =
         spec is TriggerSpec.BluetoothDeviceConnected || spec is TriggerSpec.BluetoothDeviceDisconnected
 
-    override fun matchEvent(intent: Intent, workflows: List<WorkflowDefinition>): List<Pair<String, TriggerSpec>> {
+    override fun matchEvent(intent: Intent, workflows: List<TriggerBinding>): List<Pair<String, TriggerSpec>> {
         val device = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
         } else {
@@ -198,7 +197,7 @@ internal class HeadphoneTriggerFamily(context: Context, scope: CoroutineScope)
     override fun handles(spec: TriggerSpec): Boolean =
         spec is TriggerSpec.HeadphonesPlugged || spec is TriggerSpec.HeadphonesUnplugged
 
-    override fun matchEvent(intent: Intent, workflows: List<WorkflowDefinition>): List<Pair<String, TriggerSpec>> {
+    override fun matchEvent(intent: Intent, workflows: List<TriggerBinding>): List<Pair<String, TriggerSpec>> {
         val state = intent.getIntExtra("state", -1)
         val plugged = state == 1
         val matches = mutableListOf<Pair<String, TriggerSpec>>()
@@ -225,7 +224,7 @@ internal class PowerTriggerFamily(context: Context, scope: CoroutineScope)
     override fun handles(spec: TriggerSpec): Boolean =
         spec is TriggerSpec.PowerConnected || spec is TriggerSpec.PowerDisconnected
 
-    override fun matchEvent(intent: Intent, workflows: List<WorkflowDefinition>): List<Pair<String, TriggerSpec>> {
+    override fun matchEvent(intent: Intent, workflows: List<TriggerBinding>): List<Pair<String, TriggerSpec>> {
         val isConnect = intent.action == Intent.ACTION_POWER_CONNECTED
         val matches = mutableListOf<Pair<String, TriggerSpec>>()
         for (wf in workflows) {
@@ -251,7 +250,7 @@ internal class ScreenTriggerFamily(context: Context, scope: CoroutineScope)
     override fun handles(spec: TriggerSpec): Boolean =
         spec is TriggerSpec.ScreenOn || spec is TriggerSpec.ScreenOff
 
-    override fun matchEvent(intent: Intent, workflows: List<WorkflowDefinition>): List<Pair<String, TriggerSpec>> {
+    override fun matchEvent(intent: Intent, workflows: List<TriggerBinding>): List<Pair<String, TriggerSpec>> {
         val isOn = intent.action == Intent.ACTION_SCREEN_ON
         val matches = mutableListOf<Pair<String, TriggerSpec>>()
         for (wf in workflows) {

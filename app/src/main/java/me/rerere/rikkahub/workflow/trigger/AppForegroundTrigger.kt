@@ -5,7 +5,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.workflow.model.TriggerSpec
-import me.rerere.rikkahub.workflow.model.WorkflowDefinition
 
 /**
  * Phase 12 — `app_launched` / `app_closed` triggers, fed by the existing accessibility
@@ -26,14 +25,14 @@ internal class AppForegroundTriggerFamily(
 
     override val name = "app_foreground"
 
-    @Volatile private var matching: List<WorkflowDefinition> = emptyList()
+    @Volatile private var matching: List<TriggerBinding> = emptyList()
     @Volatile private var fireCallback: TriggerFireCallback? = null
     @Volatile private var lastForegroundPackage: String? = null
 
     override fun handles(spec: TriggerSpec): Boolean =
         spec is TriggerSpec.AppLaunched || spec is TriggerSpec.AppClosed
 
-    override suspend fun sync(matching: List<WorkflowDefinition>, callback: TriggerFireCallback) {
+    override suspend fun sync(matching: List<TriggerBinding>, callback: TriggerFireCallback) {
         this.matching = matching
         this.fireCallback = callback
         AppForegroundDispatcher.bind(this)

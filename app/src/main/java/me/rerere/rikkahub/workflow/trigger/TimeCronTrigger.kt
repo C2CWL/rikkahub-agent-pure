@@ -15,7 +15,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.workflow.model.TriggerSpec
-import me.rerere.rikkahub.workflow.model.WorkflowDefinition
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -43,16 +42,28 @@ import java.util.concurrent.TimeUnit
 internal class TimeCronTriggerFamily(
     private val context: Context,
     private val scope: CoroutineScope,
+    /**
+     * 批 B — cold-start fallback. When WorkManager wakes the worker before the registry's
+     * repo flow has emitted (post-boot), [lastSnapshot] is empty; this resolves the binding
+     * straight from whichever store owns the id (missions in batch B, workflows for the
+     * legacy registry). Null return = unknown / not armed.
+     */
+    private val resolver: (suspend (String) -> TriggerBinding?)? = null,
+    /**
+     * 批 B — callback available even before the first [sync]. A WorkManager cold start can
+     * run the worker before the mission flow emits; without this the fire would be dropped.
+     */
+    private val fallbackCallback: TriggerFireCallback? = null,
 ) : WorkflowTriggerFamily {
 
     override val name = "time_cron"
 
-    @Volatile private var lastSnapshot: List<WorkflowDefinition> = emptyList()
+    @Volatile private var lastSnapshot: List<TriggerBinding> = emptyList()
     @Volatile private var fireCallback: TriggerFireCallback? = null
 
     override fun handles(spec: TriggerSpec): Boolean = spec is TriggerSpec.TimeCron
 
-    override suspend fun sync(matching: List<WorkflowDefinition>, callback: TriggerFireCallback) {
+    override suspend fun sync(matching: List<TriggerBinding>, callback: TriggerFireCallback) {
         fireCallback = callback
         val previous = lastSnapshot.associateBy { it.id }
         val current = matching.associateBy { it.id }
@@ -66,7 +77,6 @@ internal class TimeCronTriggerFamily(
             if (prev == null
                 || prev.trigger != wf.trigger
                 || prev.updatedAtMs != wf.updatedAtMs
-                || !prev.enabled
             ) {
                 scheduleWork(wf)
             }
@@ -85,7 +95,7 @@ internal class TimeCronTriggerFamily(
             .onFailure { Log.w(TAG, "time_cron: cancel work failed for $workflowId", it) }
     }
 
-    private fun scheduleWork(wf: WorkflowDefinition) {
+    private fun scheduleWork(wf: TriggerBinding) {
         val spec = wf.trigger as? TriggerSpec.TimeCron ?: return
         val zone = spec.timezone?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault()
 
@@ -124,21 +134,16 @@ internal class TimeCronTriggerFamily(
         }.onFailure { Log.w(TAG, "time_cron: one-shot enqueue failed for ${wf.id}", it) }
     }
 
-    /** Internal — fires the workflow then re-enqueues if needed. Called from worker. */
+    /** Internal — fires the owner then re-enqueues if needed. Called from worker. */
     suspend fun onWorkerFired(workflowId: String) {
-        val cb = fireCallback ?: return
+        val cb = fireCallback ?: fallbackCallback ?: return
         // Post-boot or post-process-death race: WorkManager wakes the worker before
-        // [TriggerRegistry.start] has emitted from the repo's flow, leaving `lastSnapshot`
-        // empty. Fall back to a direct repository fetch so the fire isn't silently dropped.
-        // The engine still re-checks enabled / cooldown / conditions, so this is safe.
+        // registry.start() has emitted from the repo's flow, leaving `lastSnapshot`
+        // empty. Fall back to a direct resolver lookup so the fire isn't silently
+        // dropped. The mission scheduler still gates status / cooldown / daily cap.
         val wf = lastSnapshot.firstOrNull { it.id == workflowId }
-            ?: run {
-                val loaded = me.rerere.rikkahub.workflow.trigger.TimeCronWorkerHelper
-                    .repositoryLookup(workflowId)
-                if (loaded == null) return
-                if (!loaded.entity.enabled) return
-                loaded.definition
-            }
+            ?: resolver?.invoke(workflowId)
+            ?: return
         // days_of_week gate. The time_of_day path runs as a fixed 24h PeriodicWorkRequest
         // which fires every day; the day restriction is only honoured here. Without this
         // gate a "Mondays 09:00" workflow fires daily after its first Monday.

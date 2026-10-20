@@ -5,6 +5,8 @@ import kotlinx.coroutines.runBlocking
 import me.rerere.rikkahub.data.runevent.FakeRunEventDao
 import me.rerere.rikkahub.data.runevent.RunEventRepository
 import me.rerere.rikkahub.data.runevent.RunEventType
+import me.rerere.rikkahub.service.mission.TriggerFireGate
+import me.rerere.rikkahub.workflow.model.TriggerSpec
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -324,5 +326,188 @@ class MissionRepositoryTest {
         repo.updateApprovalMode("no-such-mission", "AUTO")
         repo.updateWorkspaceAndAssistant("no-such-mission", "ws", "asst")
         // Reaching the end without throwing is the assertion.
+    }
+
+    // ------------------------------------------------------------------
+    // Batch B — start modes: trigger spec, the atomic fire gate, counters
+    // ------------------------------------------------------------------
+
+    private val powerTrigger = """{"type":"power_connected"}"""
+
+    @Test
+    fun `create persists the trigger spec and its guard rails`() = runBlocking {
+        val (dao, _, repo) = repo()
+        val mission = repo.create(
+            title = "M-trigger-create",
+            triggerJson = powerTrigger,
+            cooldownSeconds = 120,
+            maxRunsPerDay = 3,
+        )
+
+        val fetched = repo.getById(mission.id)
+        assertNotNull(fetched)
+        assertEquals(powerTrigger, fetched!!.triggerJson)
+        assertTrue("a new trigger is armed by default", fetched.triggerEnabled)
+        assertEquals(120, fetched.cooldownSeconds)
+        assertEquals(3, fetched.maxRunsPerDay)
+        assertEquals(TriggerSpec.PowerConnected, fetched.triggerSpec)
+
+        // The DAO row agrees — this is what consumeTriggerFire reads back.
+        val row = dao.getById(mission.id)!!
+        assertEquals(powerTrigger, row.triggerJson)
+        assertTrue(row.triggerEnabled)
+        assertEquals(120, row.cooldownSeconds)
+        assertEquals(3, row.maxRunsPerDay)
+    }
+
+    @Test
+    fun `consumeTriggerFire fires ACTIVE idle and starts a fresh occurrence`() = runBlocking {
+        val (dao, _, repo) = repo()
+        val mission = repo.create(title = "M-fire", triggerJson = powerTrigger)
+        val day = "2026-10-20"
+        val now = 1_000_000L
+
+        // Burn two resume rounds so the reset below is observable.
+        repo.bumpResumeCount(mission.id)
+        repo.bumpResumeCount(mission.id)
+        assertEquals(2, dao.getById(mission.id)!!.resumeCount)
+
+        assertEquals(TriggerFireGate.FIRED, repo.consumeTriggerFire(mission.id, now, day))
+        val first = dao.getById(mission.id)!!
+        assertEquals(now, first.lastFiredAt)
+        assertEquals(1, first.firesToday)
+        assertEquals(day, first.firesDay)
+        assertEquals("a new occurrence gets a fresh auto-continue budget", 0, first.resumeCount)
+
+        // Same day, no cooldown and no cap → a second occurrence is allowed.
+        assertEquals(TriggerFireGate.FIRED, repo.consumeTriggerFire(mission.id, now + 1_000L, day))
+        val second = dao.getById(mission.id)!!
+        assertEquals(2, second.firesToday)
+        assertEquals(now + 1_000L, second.lastFiredAt)
+        assertEquals(day, second.firesDay)
+    }
+
+    @Test
+    fun `cooldown skips a second fire inside the window without burning a slot`() = runBlocking {
+        val (dao, _, repo) = repo()
+        val mission = repo.create(
+            title = "M-cooldown",
+            triggerJson = powerTrigger,
+            cooldownSeconds = 60,
+        )
+        val day = "2026-10-20"
+        val t0 = 10_000_000L
+
+        assertEquals(TriggerFireGate.FIRED, repo.consumeTriggerFire(mission.id, t0, day))
+        assertEquals(
+            TriggerFireGate.SKIPPED_COOLDOWN,
+            repo.consumeTriggerFire(mission.id, t0 + 30_000L, day),
+        )
+        val skipped = dao.getById(mission.id)!!
+        assertEquals("a skipped fire must not consume the daily slot", 1, skipped.firesToday)
+        assertEquals("a skipped fire must not move lastFiredAt", t0, skipped.lastFiredAt)
+
+        // The window is [lastFiredAt, lastFiredAt + 60s): the boundary itself fires again.
+        assertEquals(TriggerFireGate.FIRED, repo.consumeTriggerFire(mission.id, t0 + 60_000L, day))
+        assertEquals(2, dao.getById(mission.id)!!.firesToday)
+    }
+
+    @Test
+    fun `daily cap stops further fires and resets on the next day`() = runBlocking {
+        val (dao, _, repo) = repo()
+        val mission = repo.create(
+            title = "M-cap",
+            triggerJson = powerTrigger,
+            maxRunsPerDay = 1,
+        )
+        val day1 = "2026-10-20"
+        val day2 = "2026-10-21"
+
+        assertEquals(TriggerFireGate.FIRED, repo.consumeTriggerFire(mission.id, 1_000L, day1))
+        assertEquals(
+            TriggerFireGate.SKIPPED_DAILY_CAP,
+            repo.consumeTriggerFire(mission.id, 2_000L, day1),
+        )
+        assertEquals(1, dao.getById(mission.id)!!.firesToday)
+
+        // A different local day zeroes the stored counter: the mission fires once more.
+        assertEquals(TriggerFireGate.FIRED, repo.consumeTriggerFire(mission.id, 3_000L, day2))
+        val nextDay = dao.getById(mission.id)!!
+        assertEquals(1, nextDay.firesToday)
+        assertEquals(day2, nextDay.firesDay)
+        assertEquals(3_000L, nextDay.lastFiredAt)
+    }
+
+    @Test
+    fun `the fire gate skips a mission whose round is still running`() = runBlocking {
+        val (dao, _, repo) = repo()
+        val mission = repo.create(title = "M-busy", triggerJson = powerTrigger)
+        repo.updateExecutionState(mission.id, MissionExecutionState.RUNNING)
+        assertEquals(
+            "sanity: the repository stores the enum name",
+            MissionExecutionState.RUNNING.name,
+            dao.getById(mission.id)!!.executionState,
+        )
+
+        assertEquals(
+            "a round in flight must never start a second one",
+            TriggerFireGate.SKIPPED_BUSY,
+            repo.consumeTriggerFire(mission.id, 5_000_000L, "2026-10-20"),
+        )
+        assertEquals("a busy mission must not burn a slot", 0, dao.getById(mission.id)!!.firesToday)
+    }
+
+    @Test
+    fun `the fire gate skips a done mission`() = runBlocking {
+        val (_, _, repo) = repo()
+        val mission = repo.create(title = "M-done", triggerJson = powerTrigger)
+        assertTrue(repo.transition(mission.id, MissionStatus.DONE))
+
+        assertEquals(
+            "finished work is not resurrected by a stale scheduler binding",
+            TriggerFireGate.SKIPPED_NOT_ACTIVE,
+            repo.consumeTriggerFire(mission.id, 5_000_000L, "2026-10-20"),
+        )
+    }
+
+    @Test
+    fun `the fire gate skips a paused trigger`() = runBlocking {
+        val (dao, _, repo) = repo()
+        val mission = repo.create(title = "M-paused", triggerJson = powerTrigger)
+        repo.setTriggerEnabled(mission.id, false)
+
+        assertEquals(
+            TriggerFireGate.SKIPPED_DISABLED,
+            repo.consumeTriggerFire(mission.id, 5_000_000L, "2026-10-20"),
+        )
+        assertEquals(0, dao.getById(mission.id)!!.firesToday)
+    }
+
+    @Test
+    fun `updateTrigger replaces the schedule and clears the fire counters`() = runBlocking {
+        val (dao, _, repo) = repo()
+        val mission = repo.create(title = "M-retrigger", triggerJson = powerTrigger)
+        assertEquals(TriggerFireGate.FIRED, repo.consumeTriggerFire(mission.id, 1_000L, "2026-10-20"))
+        repo.updateNextRunAt(mission.id, 9_999_999L)
+        assertNotNull(dao.getById(mission.id)!!.lastFiredAt)
+
+        val nextTrigger = """{"type":"wifi_connected","ssid":"Home"}"""
+        repo.updateTrigger(
+            mission.id,
+            triggerJson = nextTrigger,
+            cooldownSeconds = 30,
+            maxRunsPerDay = 5,
+            enabled = false,
+        )
+
+        val row = dao.getById(mission.id)!!
+        assertEquals(nextTrigger, row.triggerJson)
+        assertEquals(30, row.cooldownSeconds)
+        assertEquals(5, row.maxRunsPerDay)
+        assertFalse(row.triggerEnabled)
+        assertNull("a new schedule invalidates the fire stamp", row.lastFiredAt)
+        assertEquals("a new schedule starts the daily counter over", 0, row.firesToday)
+        assertNull(row.firesDay)
+        assertNull(row.nextRunAt)
     }
 }

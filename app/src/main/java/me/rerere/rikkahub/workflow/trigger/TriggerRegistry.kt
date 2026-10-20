@@ -15,7 +15,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.workflow.model.TriggerSpec
-import me.rerere.rikkahub.workflow.model.WorkflowDefinition
 import me.rerere.rikkahub.workflow.repository.WorkflowRepository
 
 /**
@@ -54,7 +53,11 @@ class TriggerRegistry(
     private val power = PowerTriggerFamily(context, triggerScope)
     private val screen = ScreenTriggerFamily(context, triggerScope)
     private val battery = BatteryTriggerFamily(context, triggerScope)
-    private val timeCron = TimeCronTriggerFamily(context, triggerScope)
+    private val timeCron = TimeCronTriggerFamily(context, triggerScope, resolver = { id ->
+        workflowRepository.getById(id)?.let {
+            TriggerBinding(it.definition.id, it.definition.trigger, it.definition.updatedAtMs)
+        }
+    })
     private val geofence = GeofenceTriggerFamily(context, triggerScope)
     private val appForeground = AppForegroundTriggerFamily(triggerScope)
     private val notification = NotificationTriggerFamily(triggerScope)
@@ -79,7 +82,11 @@ class TriggerRegistry(
         started = true
         appScope.launch(Dispatchers.IO) {
             workflowRepository.observeAll()
-                .map { loaded -> loaded.filter { it.entity.enabled }.map { it.definition } }
+                .map { loaded ->
+                    loaded.filter { it.entity.enabled }.map {
+                        TriggerBinding(it.definition.id, it.definition.trigger, it.definition.updatedAtMs)
+                    }
+                }
                 .distinctUntilChanged()
                 // 500 ms quiet window so a burst of edits in the workflow editor (10 rapid
                 // toggles, drag-to-reorder, paste-to-edit) coalesces into a single resync
@@ -94,7 +101,7 @@ class TriggerRegistry(
     }
 
     /** Re-bucket workflows and ask each family to reconcile. */
-    suspend fun resync(enabled: List<WorkflowDefinition>): Unit = syncMutex.withLock {
+    suspend fun resync(enabled: List<TriggerBinding>): Unit = syncMutex.withLock {
         val fire = engineFire ?: return@withLock
         for (family in families) {
             val matching = enabled.filter { family.handles(it.trigger) }
@@ -110,10 +117,6 @@ class TriggerRegistry(
         val foregroundConsumerCount = enabled.count { wf ->
             wf.trigger is me.rerere.rikkahub.workflow.model.TriggerSpec.AppLaunched
                 || wf.trigger is me.rerere.rikkahub.workflow.model.TriggerSpec.AppClosed
-                || wf.conditions.any {
-                    it is me.rerere.rikkahub.workflow.model.ConditionSpec.ForegroundAppIs
-                        || it is me.rerere.rikkahub.workflow.model.ConditionSpec.ForegroundAppIn
-                }
         }
         me.rerere.rikkahub.workflow.trigger.AppForegroundDispatcher
             .setForegroundConsumerCount(foregroundConsumerCount)

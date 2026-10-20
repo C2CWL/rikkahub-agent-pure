@@ -31,6 +31,12 @@ sealed interface LaunchSource {
      * [MissionContinueComposer.compose] 组装好后经 `continuePrompt` 传入。
      */
     data class Continue(val round: Int) : LaunchSource
+
+    /**
+     * 批 B — 定时 / 触发唤醒的一轮。复用已有执行会话（没有则新建），prompt 是任务守则 +
+     * 触发说明。任务必须是 ACTIVE；[label] 用于时间线与开场指令（如「定时 09:00」「Wi-Fi 连接」）。
+     */
+    data class Trigger(val label: String) : LaunchSource
 }
 
 /** Result of [MissionLauncher.launch]; `ok = false` carries a human-readable [error]. */
@@ -79,10 +85,10 @@ class MissionLauncher(
             val mission = missionRepository.getById(missionId)
                 ?: return LaunchOutcome(ok = false, error = "Mission not found: $missionId")
 
-            if (source is LaunchSource.Continue && mission.statusEnum != MissionStatus.ACTIVE) {
+            if (source !is LaunchSource.Create && mission.statusEnum != MissionStatus.ACTIVE) {
                 return LaunchOutcome(
                     ok = false,
-                    error = "Mission is ${mission.status}, not ACTIVE — continue refused",
+                    error = "Mission is ${mission.status}, not ACTIVE — launch refused",
                 )
             }
 
@@ -92,7 +98,7 @@ class MissionLauncher(
                 ?.takeIf { it.isNotBlank() }
                 ?.let { raw -> runCatching { Uuid.parse(raw) }.getOrNull() }
             val conversationUuid: Uuid? = when (source) {
-                LaunchSource.Create -> missionConversation
+                LaunchSource.Create, is LaunchSource.Trigger -> missionConversation
                 is LaunchSource.Continue -> missionConversation
                     ?: return LaunchOutcome(
                         ok = false,
@@ -110,6 +116,9 @@ class MissionLauncher(
             )
             val prompt = when (source) {
                 LaunchSource.Create -> "$directive\n\n$CREATE_KICKOFF"
+                is LaunchSource.Trigger ->
+                    "$directive\n\n[系统] 本任务的开始方式被触发（${source.label}）。" +
+                        "现在开始执行本轮任务：先给简短计划，然后立即动手；完成后调用 mission_report(done)。"
                 is LaunchSource.Continue -> continuePrompt
                     ?: return LaunchOutcome(
                         ok = false,
@@ -173,6 +182,7 @@ class MissionLauncher(
                     detail = when (source) {
                         LaunchSource.Create -> "create"
                         is LaunchSource.Continue -> "continue round ${source.round}"
+                        is LaunchSource.Trigger -> "trigger: ${source.label}"
                     },
                     missionId = missionId,
                     conversationId = handle.conversationId.toString(),

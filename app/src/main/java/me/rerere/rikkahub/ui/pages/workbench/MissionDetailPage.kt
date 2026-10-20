@@ -36,6 +36,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -71,6 +72,7 @@ import me.rerere.hugeicons.stroke.StopCircle
 import me.rerere.hugeicons.stroke.Refresh03
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.mission.Artifact
+import me.rerere.rikkahub.data.mission.MissionEntity
 import me.rerere.rikkahub.data.mission.MissionExecutionState
 import me.rerere.rikkahub.data.mission.MissionStatus
 import me.rerere.rikkahub.data.runevent.RunEventEntity
@@ -79,6 +81,8 @@ import me.rerere.rikkahub.data.mission.acceptanceChecked
 import me.rerere.rikkahub.data.mission.acceptanceCriteria
 import me.rerere.rikkahub.data.mission.executionStateEnum
 import me.rerere.rikkahub.data.mission.statusEnum
+import me.rerere.rikkahub.data.mission.triggerSpec
+import me.rerere.rikkahub.workflow.model.TriggerSpec
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -308,6 +312,20 @@ fun MissionDetailPage(missionId: String) {
                 }
             }
 
+            // ①d Start mode card (批 B — trigger arming; run-zone three-state logic untouched)
+            mission?.let { m ->
+                val spec = m.triggerSpec
+                val status = m.statusEnum
+                if (spec != null && (status == MissionStatus.ACTIVE || status == MissionStatus.BLOCKED)) {
+                    item {
+                        TriggerCard(
+                            mission = m,
+                            onToggle = { enabled -> vm.setTriggerEnabled(m.id, enabled) },
+                        )
+                    }
+                }
+            }
+
             // ② Acceptance criteria
             mission?.let { m ->
                 val criteria = m.acceptanceCriteria
@@ -417,7 +435,11 @@ fun MissionDetailPage(missionId: String) {
                         style = MaterialTheme.typography.titleSmall,
                     )
                 }
-                items(artifacts, key = { it.id }) { artifact ->
+                // Keys are namespaced: an Artifact is a projection of an ARTIFACT event, so its
+                // id IS that event's id. Using the raw id here would collide with the same event
+                // rendered in the timeline section below — one LazyColumn, two items with the
+                // same key → IllegalArgumentException at measure time.
+                items(artifacts, key = { "artifact:${it.id}" }) { artifact ->
                     ArtifactRow(
                         artifact = artifact,
                         expanded = expandedArtifactId == artifact.id,
@@ -470,7 +492,7 @@ fun MissionDetailPage(missionId: String) {
                         style = MaterialTheme.typography.titleSmall,
                     )
                 }
-                items(timeline, key = { it.id }) { event ->
+                items(timeline, key = { "event:${it.id}" }) { event ->
                     TimelineRow(event = event)
                 }
             }
@@ -576,6 +598,106 @@ fun MissionDetailPage(missionId: String) {
                 }
             },
         )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 批 B — start mode (trigger) card
+// ---------------------------------------------------------------------------
+
+/** Day-of-week label (ISO 1..7, 1 = Monday); shared with the create sheet's day chips. */
+private fun dayLabelRes(day: Int): Int = when (day) {
+    1 -> R.string.mission_start_day_mon
+    2 -> R.string.mission_start_day_tue
+    3 -> R.string.mission_start_day_wed
+    4 -> R.string.mission_start_day_thu
+    5 -> R.string.mission_start_day_fri
+    6 -> R.string.mission_start_day_sat
+    else -> R.string.mission_start_day_sun
+}
+
+/**
+ * Human-readable trigger summary: TimeCron renders "定时 HH:mm（周一/三）" style text,
+ * the event types offered by the create sheet render their localized label, anything
+ * else falls back to the spec's class name (a technical identifier).
+ */
+@Composable
+private fun triggerSummary(spec: TriggerSpec): String = when (spec) {
+    is TriggerSpec.TimeCron -> {
+        val time = spec.timeOfDay ?: spec.cron ?: ""
+        val dayText = if (spec.daysOfWeek.isEmpty()) {
+            stringResource(R.string.mission_trigger_every_day)
+        } else {
+            // Build the labels with a plain loop: stringResource is @Composable and must not
+            // be called from a non-composable lambda such as joinToString's transform.
+            val parts = mutableListOf<String>()
+            for (day in spec.daysOfWeek.sorted()) {
+                parts += stringResource(dayLabelRes(day))
+            }
+            parts.joinToString("/")
+        }
+        stringResource(R.string.mission_trigger_time_cron_summary, time, dayText)
+    }
+    is TriggerSpec.WifiConnected -> stringResource(R.string.mission_trigger_wifi_connected)
+    is TriggerSpec.WifiDisconnected -> stringResource(R.string.mission_trigger_wifi_disconnected)
+    TriggerSpec.PowerConnected -> stringResource(R.string.mission_trigger_power_connected)
+    TriggerSpec.PowerDisconnected -> stringResource(R.string.mission_trigger_power_disconnected)
+    TriggerSpec.BootCompleted -> stringResource(R.string.mission_trigger_boot_completed)
+    TriggerSpec.ScreenOn -> stringResource(R.string.mission_trigger_screen_on)
+    TriggerSpec.ScreenOff -> stringResource(R.string.mission_trigger_screen_off)
+    else -> spec::class.simpleName ?: "Trigger"
+}
+
+@Composable
+private fun TriggerCard(
+    mission: MissionEntity,
+    onToggle: (Boolean) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.mission_trigger_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(
+                    checked = mission.triggerEnabled,
+                    onCheckedChange = onToggle,
+                )
+            }
+            mission.triggerSpec?.let { spec ->
+                Text(
+                    text = triggerSummary(spec),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            mission.nextRunAt?.let { next ->
+                Text(
+                    text = stringResource(R.string.mission_trigger_next_run, relativeTime(next)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (!mission.triggerEnabled) {
+                Text(
+                    text = stringResource(R.string.mission_trigger_paused),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 

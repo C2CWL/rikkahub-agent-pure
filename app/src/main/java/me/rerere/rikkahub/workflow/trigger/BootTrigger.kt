@@ -6,7 +6,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.workflow.execution.WorkflowEngine
 import me.rerere.rikkahub.workflow.model.TriggerSpec
-import me.rerere.rikkahub.workflow.model.WorkflowDefinition
 import me.rerere.rikkahub.workflow.repository.WorkflowRepository
 import org.koin.java.KoinJavaComponent
 
@@ -22,16 +21,18 @@ import org.koin.java.KoinJavaComponent
  */
 internal class BootTriggerFamily(
     private val scope: CoroutineScope,
+    /** 批 B — cold-start resolver (missions live, workflows legacy); see [TimeCronTriggerFamily]. */
+    private val resolver: (suspend () -> Pair<TriggerFireCallback, List<TriggerBinding>>?)? = null,
 ) : WorkflowTriggerFamily {
 
     override val name = "boot"
 
-    @Volatile private var matching: List<WorkflowDefinition> = emptyList()
+    @Volatile private var matching: List<TriggerBinding> = emptyList()
     @Volatile private var callback: TriggerFireCallback? = null
 
     override fun handles(spec: TriggerSpec): Boolean = spec is TriggerSpec.BootCompleted
 
-    override suspend fun sync(matching: List<WorkflowDefinition>, callback: TriggerFireCallback) {
+    override suspend fun sync(matching: List<TriggerBinding>, callback: TriggerFireCallback) {
         this.matching = matching
         this.callback = callback
     }
@@ -56,7 +57,7 @@ internal class BootTriggerFamily(
                 }
                 return@launch
             }
-            val (repoFire, defs) = BootTriggerHelper.repositoryLookup() ?: return@launch
+            val (repoFire, defs) = (resolver?.invoke() ?: BootTriggerHelper.repositoryLookup()) ?: return@launch
             for (wf in defs) {
                 if (wf.trigger !is TriggerSpec.BootCompleted) continue
                 runCatching { repoFire.onFire(wf.id, wf.trigger) }.onFailure {
@@ -95,9 +96,11 @@ object WorkflowBootDispatcher {
  * (boot family filters to BootCompleted at the call site). Null if Koin isn't ready.
  */
 internal object BootTriggerHelper {
-    suspend fun repositoryLookup(): Pair<TriggerFireCallback, List<WorkflowDefinition>>? = runCatching {
+    suspend fun repositoryLookup(): Pair<TriggerFireCallback, List<TriggerBinding>>? = runCatching {
         val repo = KoinJavaComponent.getKoin().get<WorkflowRepository>()
         val engine = KoinJavaComponent.getKoin().get<WorkflowEngine>()
-        engine.triggerCallback to repo.listEnabled().map { it.definition }
+        engine.triggerCallback to repo.listEnabled().map {
+            TriggerBinding(it.definition.id, it.definition.trigger, it.definition.updatedAtMs)
+        }
     }.getOrNull()
 }

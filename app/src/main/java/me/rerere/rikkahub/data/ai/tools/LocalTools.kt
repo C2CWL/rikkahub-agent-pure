@@ -920,14 +920,17 @@ class LocalTools(
             tools.add(telegramDeleteCommandsTool(telegramBotPreferences, telegramBotClient))
         }
         if (options.contains(LocalToolOption.CronJobs)) {
-            tools.add(me.rerere.rikkahub.data.ai.tools.local.scheduleJobTool(scheduledJobRepository, cronJobScheduler, settingsStore,
-                knownToolNamesProvider = { tools.map { it.name } }))
-            tools.add(me.rerere.rikkahub.data.ai.tools.local.listJobsTool(scheduledJobRepository))
-            tools.add(me.rerere.rikkahub.data.ai.tools.local.deleteJobTool(scheduledJobRepository, scheduledJobRunRepository, cronJobScheduler))
-            tools.add(me.rerere.rikkahub.data.ai.tools.local.pauseJobTool(scheduledJobRepository, cronJobScheduler))
-            tools.add(me.rerere.rikkahub.data.ai.tools.local.resumeJobTool(scheduledJobRepository, cronJobScheduler))
-            tools.add(me.rerere.rikkahub.data.ai.tools.local.triggerJobNowTool(scheduledJobRepository, cronJobScheduler))
-            tools.add(me.rerere.rikkahub.data.ai.tools.local.getJobHistoryTool(scheduledJobRepository, scheduledJobRunRepository))
+            // 批 B — 定时任务退役：cron_* 工具停止注册（实现与 import 保留，开关见 LegacyAutomation）。
+            if (me.rerere.rikkahub.service.LegacyAutomation.ENABLED) {
+                tools.add(me.rerere.rikkahub.data.ai.tools.local.scheduleJobTool(scheduledJobRepository, cronJobScheduler, settingsStore,
+                    knownToolNamesProvider = { tools.map { it.name } }))
+                tools.add(me.rerere.rikkahub.data.ai.tools.local.listJobsTool(scheduledJobRepository))
+                tools.add(me.rerere.rikkahub.data.ai.tools.local.deleteJobTool(scheduledJobRepository, scheduledJobRunRepository, cronJobScheduler))
+                tools.add(me.rerere.rikkahub.data.ai.tools.local.pauseJobTool(scheduledJobRepository, cronJobScheduler))
+                tools.add(me.rerere.rikkahub.data.ai.tools.local.resumeJobTool(scheduledJobRepository, cronJobScheduler))
+                tools.add(me.rerere.rikkahub.data.ai.tools.local.triggerJobNowTool(scheduledJobRepository, cronJobScheduler))
+                tools.add(me.rerere.rikkahub.data.ai.tools.local.getJobHistoryTool(scheduledJobRepository, scheduledJobRunRepository))
+            }
         }
         if (options.contains(LocalToolOption.ScreenAutomation)) {
             tools.add(tapTool(invocationContext, interactiveToolStreamer))
@@ -1089,24 +1092,27 @@ class LocalTools(
             tools.add(me.rerere.rikkahub.data.ai.tools.local.showLocationOnMapTool(context, invocationContext, interactiveToolStreamer))
         }
         if (options.contains(LocalToolOption.Workflows)) {
-            // workflow_create persists the authoringAssistantId from [context] so the
-            // engine can resolve the right tool surface at fire time (not "any assistant
-            // with the Workflows toggle on", which is non-deterministic across UI reorder).
-            tools.add(me.rerere.rikkahub.workflow.tools.workflowCreateTool(
-                workflowRepository,
-                knownToolNamesProvider = { tools.map { it.name } },
-                callerContext = invocationContext,
-            ))
-            tools.add(me.rerere.rikkahub.workflow.tools.workflowListTool(workflowRepository))
-            tools.add(me.rerere.rikkahub.workflow.tools.workflowGetTool(workflowRepository))
-            tools.add(me.rerere.rikkahub.workflow.tools.workflowUpdateTool(
-                workflowRepository,
-                knownToolNamesProvider = { tools.map { it.name } },
-                callerContext = invocationContext,
-            ))
-            tools.add(me.rerere.rikkahub.workflow.tools.workflowDeleteTool(workflowRepository))
-            tools.add(me.rerere.rikkahub.workflow.tools.workflowSetEnabledTool(workflowRepository))
-            tools.add(me.rerere.rikkahub.workflow.tools.workflowRunTool(workflowEngine, workflowRepository))
+            // 批 B — 工作流退役：workflow_* 工具停止注册（实现与 import 保留，开关见 LegacyAutomation）。
+            if (me.rerere.rikkahub.service.LegacyAutomation.ENABLED) {
+                // workflow_create persists the authoringAssistantId from [context] so the
+                // engine can resolve the right tool surface at fire time (not "any assistant
+                // with the Workflows toggle on", which is non-deterministic across UI reorder).
+                tools.add(me.rerere.rikkahub.workflow.tools.workflowCreateTool(
+                    workflowRepository,
+                    knownToolNamesProvider = { tools.map { it.name } },
+                    callerContext = invocationContext,
+                ))
+                tools.add(me.rerere.rikkahub.workflow.tools.workflowListTool(workflowRepository))
+                tools.add(me.rerere.rikkahub.workflow.tools.workflowGetTool(workflowRepository))
+                tools.add(me.rerere.rikkahub.workflow.tools.workflowUpdateTool(
+                    workflowRepository,
+                    knownToolNamesProvider = { tools.map { it.name } },
+                    callerContext = invocationContext,
+                ))
+                tools.add(me.rerere.rikkahub.workflow.tools.workflowDeleteTool(workflowRepository))
+                tools.add(me.rerere.rikkahub.workflow.tools.workflowSetEnabledTool(workflowRepository))
+                tools.add(me.rerere.rikkahub.workflow.tools.workflowRunTool(workflowEngine, workflowRepository))
+            }
         }
         if (options.contains(LocalToolOption.Browser)) {
             // Per-tool registration. The user can grant only the tools they trust — read

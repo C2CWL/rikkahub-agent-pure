@@ -75,7 +75,7 @@ import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
         RunEventEntity::class,
         RunCheckpointEntity::class,
     ],
-    version = 35,
+    version = 36,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -141,6 +141,11 @@ import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
         // Pure nullable/defaulted additions, so Room's auto-diff handles them; the
         // backup-restore path backfills them in ImportedDatabaseReconciler.
         AutoMigration(from = 34, to = 35),
+        // v36 (批 B, start modes): trigger/schedule columns on `missions` — the trigger spec
+        // JSON, its armed flag, cooldown + daily-cap guard rails and the fire counters.
+        // Pure nullable/defaulted additions, so Room's auto-diff handles them; the
+        // backup-restore path backfills them in ImportedDatabaseReconciler.
+        AutoMigration(from = 35, to = 36),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)

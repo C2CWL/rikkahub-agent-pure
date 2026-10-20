@@ -11,7 +11,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.workflow.model.TriggerSpec
-import me.rerere.rikkahub.workflow.model.WorkflowDefinition
 
 /**
  * Phase 12 — battery transition triggers. ACTION_BATTERY_CHANGED fires very frequently
@@ -30,13 +29,13 @@ internal class BatteryTriggerFamily(
     override val name = "battery"
 
     @Volatile private var receiver: BroadcastReceiver? = null
-    @Volatile private var matching: List<WorkflowDefinition> = emptyList()
+    @Volatile private var matching: List<TriggerBinding> = emptyList()
     @Volatile private var prevLevel: Int? = null
 
     override fun handles(spec: TriggerSpec): Boolean =
         spec is TriggerSpec.BatteryBelow || spec is TriggerSpec.BatteryAbove
 
-    override suspend fun sync(matching: List<WorkflowDefinition>, callback: TriggerFireCallback) {
+    override suspend fun sync(matching: List<TriggerBinding>, callback: TriggerFireCallback) {
         this.matching = matching
         if (matching.isEmpty()) {
             unregister()
